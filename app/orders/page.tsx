@@ -1641,20 +1641,23 @@ export default function OrdersPage() {
                                 event.stopPropagation()
                               }
                             >
-                              <button
-                                type="button"
-                                className="ui-button--primary"
-                                onClick={(event) => {
-                                  event.stopPropagation();
+                              {order.payment?.status !==
+                                "PAID" && (
+                                <button
+                                  type="button"
+                                  className="ui-button--primary"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
 
-                                  setEditingPriceOrder(order);
-                                  setNewOrderPrice(
-                                    Number(order.priceUsd).toFixed(2)
-                                  );
-                                }}
-                              >
-                                Edit Price
-                              </button>
+                                    setEditingPriceOrder(order);
+                                    setNewOrderPrice(
+                                      Number(order.priceUsd).toFixed(2)
+                                    );
+                                  }}
+                                >
+                                  Edit Price
+                                </button>
+                              )}
 
                               <button
                                 type="button"

@@ -174,6 +174,18 @@ export async function PATCH(
     }
 
     if (action === "updatePrice") {
+      if (order.payment?.status === "PAID") {
+        return NextResponse.json(
+          {
+            error:
+              "Paid orders cannot have their price changed.",
+          },
+          {
+            status: 409,
+          }
+        );
+      }
+
       const priceUsd = Number(body.priceUsd);
 
       if (
@@ -186,27 +198,6 @@ export async function PATCH(
           },
           {
             status: 400,
-          }
-        );
-      }
-
-      const order = await prisma.order.findUnique({
-        where: {
-          id: params.id,
-        },
-
-        include: {
-          payment: true,
-        },
-      });
-
-      if (!order) {
-        return NextResponse.json(
-          {
-            error: "Order not found",
-          },
-          {
-            status: 404,
           }
         );
       }
