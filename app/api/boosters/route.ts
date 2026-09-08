@@ -43,6 +43,7 @@ function serializeBooster(booster: any) {
     id: booster.id,
     name: booster.name,
     email: booster.email,
+    profileImageUrl: booster.profileImageUrl,
     active: booster.active,
     createdAt: booster.createdAt,
 
@@ -105,6 +106,7 @@ export async function GET(request: NextRequest) {
           id: true,
           name: true,
           email: true,
+          profileImageUrl: true,
           active: true,
           createdAt: true,
 

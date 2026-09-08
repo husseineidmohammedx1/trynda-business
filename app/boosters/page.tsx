@@ -7,6 +7,7 @@ type Booster = {
   id: string;
   name: string;
   email: string;
+  profileImageUrl?: string | null;
   active: boolean;
   createdAt: string;
 
@@ -1096,24 +1097,43 @@ export default function BoostersPage() {
                                 "1px solid #202a42",
                             }}
                           >
-                            <strong>
-                              {
-                                booster.name
-                              }
-                            </strong>
+                            <div className="admin-booster-identity">
+                              <div
+                                className={
+                                  booster.profileImageUrl
+                                    ? "admin-booster-avatar has-image"
+                                    : "admin-booster-avatar"
+                                }
+                              >
+                                {booster.profileImageUrl ? (
+                                  <img
+                                    src={booster.profileImageUrl}
+                                    alt=""
+                                  />
+                                ) : (
+                                  booster.name
+                                    .charAt(0)
+                                    .toUpperCase()
+                                )}
+                              </div>
 
-                            <div
-                              className="muted"
-                              style={{
-                                fontSize:
-                                  "12px",
-                                marginTop:
-                                  "5px",
-                              }}
-                            >
-                              {
-                                booster.email
-                              }
+                              <div>
+                                <strong>
+                                  {booster.name}
+                                </strong>
+
+                                <div
+                                  className="muted"
+                                  style={{
+                                    fontSize:
+                                      "12px",
+                                    marginTop:
+                                      "5px",
+                                  }}
+                                >
+                                  {booster.email}
+                                </div>
+                              </div>
                             </div>
                           </td>
 

@@ -85,6 +85,7 @@ export async function GET(request: NextRequest) {
         email: true,
         active: true,
         createdAt: true,
+        profileImageUrl: true,
 
         platformFeePercent: true,
         extraPenaltyPercent: true,
@@ -189,6 +190,7 @@ export async function GET(request: NextRequest) {
         id: booster.id,
         name: booster.name,
         email: booster.email,
+        profileImageUrl: booster.profileImageUrl,
 
         active: booster.active,
 
@@ -244,6 +246,69 @@ export async function GET(request: NextRequest) {
       {
         status: 500,
       }
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const token = request.cookies.get("session")?.value;
+    const session = token
+      ? await verifySession(token)
+      : null;
+
+    if (!session?.userId || session.role !== "BOOSTER") {
+      return NextResponse.json(
+        { error: "Booster access required" },
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json();
+    const profileImageUrl =
+      body.profileImageUrl === null
+        ? null
+        : String(body.profileImageUrl || "");
+
+    if (
+      profileImageUrl &&
+      (!/^data:image\/(jpeg|png|webp);base64,/.test(
+        profileImageUrl
+      ) || profileImageUrl.length > 1_500_000)
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Please upload a valid image smaller than 1 MB.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const booster = await prisma.user.update({
+      where: { id: String(session.userId) },
+      data: { profileImageUrl },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        profileImageUrl: true,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      booster,
+    });
+  } catch (error) {
+    console.error(
+      "Update booster profile image error:",
+      error
+    );
+
+    return NextResponse.json(
+      { error: "Failed to update profile image" },
+      { status: 500 }
     );
   }
 }

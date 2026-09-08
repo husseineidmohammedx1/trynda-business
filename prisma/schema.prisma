@@ -35,6 +35,7 @@ model User {
   role         Role     @default(BOOSTER)
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
+  profileImageUrl String? @db.Text
 
   // Default platform fee for this booster
   platformFeePercent Decimal @default(7) @db.Decimal(5, 2)

@@ -2013,8 +2013,9 @@ textarea:-webkit-autofill {
 
   flex: 0 0 auto;
 
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
+  padding: 3px;
 
   border:
     1px solid rgba(117,104,255,0.17);
@@ -2035,10 +2036,80 @@ textarea:-webkit-autofill {
 }
 
 .booster-avatar.large {
-  width: 46px;
-  height: 46px;
+  width: 40px;
+  height: 40px;
   border-radius: 12px;
   font-size: 15px;
+  padding: 3px;
+}
+
+.booster-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.booster-avatar.has-image,
+.admin-booster-avatar.has-image {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.admin-booster-identity {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.admin-booster-avatar {
+  display: grid;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 3px;
+  overflow: hidden;
+  border: 1px solid rgba(96, 165, 250, 0.55);
+  border-radius: 50%;
+  background: linear-gradient(145deg, rgba(59, 130, 246, 0.28), rgba(30, 64, 175, 0.16));
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.24);
+  color: #bfdbfe;
+  font-size: 14px;
+  font-weight: 800;
+  place-items: center;
+}
+
+.admin-booster-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.booster-profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.booster-profile-actions label,
+.booster-profile-actions button {
+  min-height: 34px;
+  padding: 8px 11px;
+  border: 1px solid rgba(117, 104, 255, 0.24);
+  border-radius: 9px;
+  background: rgba(117, 104, 255, 0.10);
+  color: #e7e4ff;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.booster-profile-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .booster-nav-label {

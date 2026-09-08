@@ -13,6 +13,7 @@ type Booster = {
   id: string;
   name: string;
   email: string;
+  profileImageUrl?: string | null;
   active: boolean;
   createdAt: string;
 
@@ -44,6 +45,55 @@ function formatMoney(value: unknown) {
   }
 
   return `$${number.toFixed(2)}`;
+}
+
+async function resizeProfileImage(file: File) {
+  const imageUrl = URL.createObjectURL(file);
+
+  try {
+    const image = new Image();
+
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("Invalid image"));
+      image.src = imageUrl;
+    });
+
+    const size = 512;
+    const sourceSize = Math.min(
+      image.width,
+      image.height
+    );
+    const sourceX =
+      (image.width - sourceSize) / 2;
+    const sourceY =
+      (image.height - sourceSize) / 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      throw new Error("Could not process image");
+    }
+
+    context.drawImage(
+      image,
+      sourceX,
+      sourceY,
+      sourceSize,
+      sourceSize,
+      0,
+      0,
+      size,
+      size
+    );
+
+    return canvas.toDataURL("image/jpeg", 0.82);
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
 }
 
 function formatDate(value: unknown) {
@@ -235,6 +285,9 @@ export default function BoosterPage() {
   const [error, setError] =
     useState("");
 
+  const [savingProfileImage, setSavingProfileImage] =
+    useState(false);
+
   const [
     selectedOrder,
     setSelectedOrder,
@@ -315,6 +368,95 @@ export default function BoosterPage() {
     } finally {
       router.replace("/login");
       router.refresh();
+    }
+  }
+
+  async function updateProfileImage(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      setSavingProfileImage(true);
+      setError("");
+
+      const profileImageUrl =
+        await resizeProfileImage(file);
+      const response = await fetch(
+        "/api/booster/me",
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            profileImageUrl,
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+            "Failed to update profile image"
+        );
+      }
+
+      await loadPortal(true);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Failed to update profile image"
+      );
+    } finally {
+      setSavingProfileImage(false);
+    }
+  }
+
+  async function removeProfileImage() {
+    try {
+      setSavingProfileImage(true);
+      setError("");
+
+      const response = await fetch(
+        "/api/booster/me",
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            profileImageUrl: null,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(
+          result.error ||
+            "Failed to remove profile image"
+        );
+      }
+
+      await loadPortal(true);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Failed to remove profile image"
+      );
+    } finally {
+      setSavingProfileImage(false);
     }
   }
 
@@ -441,12 +583,25 @@ export default function BoosterPage() {
         </Link>
 
         <div className="booster-profile-mini">
-          <div className="booster-avatar">
-            {(
-              booster?.name || "B"
-            )
-              .charAt(0)
-              .toUpperCase()}
+            <div
+              className={
+                booster?.profileImageUrl
+                  ? "booster-avatar has-image"
+                  : "booster-avatar"
+              }
+            >
+              {booster?.profileImageUrl ? (
+                <img
+                  src={booster.profileImageUrl}
+                  alt=""
+                />
+              ) : (
+                (
+                  booster?.name || "B"
+                )
+                  .charAt(0)
+                  .toUpperCase()
+              )}
           </div>
 
           <div>
@@ -633,13 +788,26 @@ export default function BoosterPage() {
 
               <article className="booster-profile-card">
                 <div className="booster-profile-card-head">
-                  <div className="booster-avatar large">
-                    {(
-                      booster?.name ||
-                      "B"
-                    )
-                      .charAt(0)
-                      .toUpperCase()}
+                  <div
+                    className={
+                      booster?.profileImageUrl
+                        ? "booster-avatar large has-image"
+                        : "booster-avatar large"
+                    }
+                  >
+                    {booster?.profileImageUrl ? (
+                      <img
+                        src={booster.profileImageUrl}
+                        alt=""
+                      />
+                    ) : (
+                      (
+                        booster?.name ||
+                        "B"
+                      )
+                        .charAt(0)
+                        .toUpperCase()
+                    )}
                   </div>
 
                   <div>
@@ -660,6 +828,31 @@ export default function BoosterPage() {
                 <div className="booster-account-status">
                   <span />
                   Active account
+                </div>
+
+                <div className="booster-profile-actions">
+                  <label className="ui-button--primary">
+                    {savingProfileImage
+                      ? "Saving..."
+                      : "Choose profile photo"}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={updateProfileImage}
+                      disabled={savingProfileImage}
+                      hidden
+                    />
+                  </label>
+
+                  {booster?.profileImageUrl && (
+                    <button
+                      type="button"
+                      onClick={removeProfileImage}
+                      disabled={savingProfileImage}
+                    >
+                      Remove
+                    </button>
+                  )}
                 </div>
               </article>
             </section>
