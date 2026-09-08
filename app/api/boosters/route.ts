@@ -20,6 +20,25 @@ async function requireAdmin(request: NextRequest) {
 }
 
 function serializeBooster(booster: any) {
+  const completedOrders = Array.isArray(
+    booster.orders
+  )
+    ? booster.orders.filter(
+        (order: any) =>
+          order.status === "COMPLETED"
+      )
+    : [];
+
+  const calculatedTotalEarned =
+    completedOrders.reduce(
+      (sum: number, order: any) =>
+        sum +
+        Number(
+          order.boosterAmountUsd ?? 0
+        ),
+      0
+    );
+
   return {
     id: booster.id,
     name: booster.name,
@@ -40,7 +59,9 @@ function serializeBooster(booster: any) {
     ),
 
     totalEarnedUsd: Number(
-      booster.totalEarnedUsd ?? 0
+      booster.orders
+        ? calculatedTotalEarned
+        : booster.totalEarnedUsd ?? 0
     ),
 
     totalPaidUsd: Number(
@@ -98,6 +119,13 @@ export async function GET(request: NextRequest) {
             select: {
               orders: true,
               payments: true,
+            },
+          },
+
+          orders: {
+            select: {
+              status: true,
+              boosterAmountUsd: true,
             },
           },
         },

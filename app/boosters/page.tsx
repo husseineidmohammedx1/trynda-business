@@ -21,8 +21,16 @@ type Booster = {
   paymentsCount: number;
 };
 
-function formatMoney(value: number) {
-  const amount = Number(value || 0);
+function toSafeNumber(value: unknown) {
+  const amount = Number(value ?? 0);
+
+  return Number.isFinite(amount)
+    ? amount
+    : 0;
+}
+
+function formatMoney(value: unknown) {
+  const amount = toSafeNumber(value);
 
   if (amount < 0) {
     return `-$${Math.abs(amount).toFixed(2)}`;
@@ -110,7 +118,30 @@ export default function BoostersPage() {
 
       setBoosters(
         Array.isArray(data)
-          ? data
+          ? data.map((booster) => ({
+              ...booster,
+              platformFeePercent: toSafeNumber(
+                booster.platformFeePercent
+              ),
+              extraPenaltyPercent: toSafeNumber(
+                booster.extraPenaltyPercent
+              ),
+              balanceUsd: toSafeNumber(
+                booster.balanceUsd
+              ),
+              totalEarnedUsd: toSafeNumber(
+                booster.totalEarnedUsd
+              ),
+              totalPaidUsd: toSafeNumber(
+                booster.totalPaidUsd
+              ),
+              ordersCount: toSafeNumber(
+                booster.ordersCount
+              ),
+              paymentsCount: toSafeNumber(
+                booster.paymentsCount
+              ),
+            }))
           : []
       );
     } catch (err) {
@@ -571,9 +602,7 @@ export default function BoostersPage() {
     boosters.reduce(
       (sum, booster) =>
         sum +
-        Number(
-          booster.ordersCount || 0
-        ),
+        toSafeNumber(booster.ordersCount),
       0
     );
 
@@ -591,9 +620,7 @@ export default function BoostersPage() {
     boosters.reduce(
       (sum, booster) =>
         sum +
-        Number(
-          booster.balanceUsd || 0
-        ),
+        toSafeNumber(booster.balanceUsd),
       0
     );
 
@@ -601,10 +628,7 @@ export default function BoostersPage() {
     boosters.reduce(
       (sum, booster) =>
         sum +
-        Number(
-          booster.totalEarnedUsd ||
-            0
-        ),
+        toSafeNumber(booster.totalEarnedUsd),
       0
     );
 
@@ -612,10 +636,7 @@ export default function BoostersPage() {
     boosters.reduce(
       (sum, booster) =>
         sum +
-        Number(
-          booster.totalPaidUsd ||
-            0
-        ),
+        toSafeNumber(booster.totalPaidUsd),
       0
     );
 
