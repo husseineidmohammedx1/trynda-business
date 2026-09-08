@@ -107,6 +107,14 @@ function formatMoney(value: number) {
   return `$${amount.toFixed(2)}`;
 }
 
+function formatEgp(value: number | null) {
+  if (value === null || !Number.isFinite(value)) {
+    return "—";
+  }
+
+  return `${value.toFixed(2)} EGP`;
+}
+
 function formatDate(
   value: string | null | undefined
 ) {
@@ -181,6 +189,9 @@ export default function PaymentsPage() {
   const [error, setError] =
     useState("");
 
+  const [exchangeRate, setExchangeRate] =
+    useState<number | null>(null);
+
   const [expandedBooster, setExpandedBooster] =
     useState<string | null>(null);
 
@@ -205,8 +216,14 @@ export default function PaymentsPage() {
   const [payExchangeRate, setPayExchangeRate] =
     useState("");
 
+  const [payAmount, setPayAmount] =
+    useState("");
+
   const [savingPayment, setSavingPayment] =
     useState(false);
+
+  const [undoingPayment, setUndoingPayment] =
+    useState<string | null>(null);
 
   // =====================================================
   // LOAD PAYMENTS
@@ -253,6 +270,27 @@ export default function PaymentsPage() {
       setTotals(
         result.totals ?? null
       );
+
+      const exchangeResponse = await fetch(
+        "/api/exchange-rate",
+        {
+          cache: "no-store",
+        }
+      );
+
+      if (exchangeResponse.ok) {
+        const exchangeData =
+          (await exchangeResponse.json()) as {
+            rate?: number;
+          };
+        const rate = Number(exchangeData.rate);
+
+        setExchangeRate(
+          Number.isFinite(rate) && rate > 0
+            ? rate
+            : null
+        );
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -268,6 +306,21 @@ export default function PaymentsPage() {
     loadPayments();
   }, [month]);
 
+  const totalBalanceEgp =
+    exchangeRate !== null && totals
+      ? totals.balanceUsd * exchangeRate
+      : null;
+
+  const totalOnHoldEgp =
+    exchangeRate !== null && totals
+      ? totals.onHoldUsd * exchangeRate
+      : null;
+
+  const totalPaidEgp =
+    exchangeRate !== null && totals
+      ? totals.paidUsd * exchangeRate
+      : null;
+
   // =====================================================
   // PAY BOOSTER MODAL
   // =====================================================
@@ -275,12 +328,15 @@ export default function PaymentsPage() {
   function openPayModal(
     booster: BoosterPayment
   ) {
-    if (booster.balanceUsd <= 0) {
+    if (booster.expectedPayableUsd <= 0) {
       return;
     }
 
     setPayBoosterModal(booster);
     setPayExchangeRate("");
+    setPayAmount(
+      booster.expectedPayableUsd.toFixed(2)
+    );
     setError("");
   }
 
@@ -291,6 +347,7 @@ export default function PaymentsPage() {
 
     setPayBoosterModal(null);
     setPayExchangeRate("");
+    setPayAmount("");
     setError("");
   }
 
@@ -303,6 +360,8 @@ export default function PaymentsPage() {
       payExchangeRate
     );
 
+    const amount = Number(payAmount);
+
     if (
       !Number.isFinite(rate) ||
       rate <= 0
@@ -313,9 +372,20 @@ export default function PaymentsPage() {
       return;
     }
 
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      amount > payBoosterModal.expectedPayableUsd
+    ) {
+      setError(
+        "Enter an amount up to the expected payable balance."
+      );
+      return;
+    }
+
     const confirmed = window.confirm(
       `Confirm payment of ${formatMoney(
-        payBoosterModal.balanceUsd
+        payBoosterModal.expectedPayableUsd
       )} to ${payBoosterModal.name}?`
     );
 
@@ -340,6 +410,7 @@ export default function PaymentsPage() {
               payBoosterModal.id,
             month,
             exchangeRate: rate,
+            amountUsd: amount,
           }),
         }
       );
@@ -361,6 +432,7 @@ export default function PaymentsPage() {
 
       setPayBoosterModal(null);
       setPayExchangeRate("");
+      setPayAmount("");
 
       await loadPayments();
     } catch (err) {
@@ -371,6 +443,56 @@ export default function PaymentsPage() {
       );
     } finally {
       setSavingPayment(false);
+    }
+  }
+
+  async function undoLastPayment(
+    booster: BoosterPayment
+  ) {
+    const confirmed = window.confirm(
+      `Undo the latest payment for ${booster.name}?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setUndoingPayment(booster.id);
+      setError("");
+
+      const response = await fetch(
+        "/api/payments",
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "undoLastPayment",
+            boosterId: booster.id,
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+            "Failed to undo payment"
+        );
+      }
+
+      await loadPayments();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to undo payment"
+      );
+    } finally {
+      setUndoingPayment(null);
     }
   }
 
@@ -674,6 +796,14 @@ export default function PaymentsPage() {
               )}
             </strong>
 
+            <span className="payment-balance-egp-label">
+              السعر بالجنية المصري المستحق
+            </span>
+
+            <strong className="payment-balance-egp">
+              {formatEgp(totalBalanceEgp)}
+            </strong>
+
             <small>
               Available to pay
             </small>
@@ -691,6 +821,14 @@ export default function PaymentsPage() {
               {formatMoney(
                 totals?.onHoldUsd ?? 0
               )}
+            </strong>
+
+            <span className="payment-balance-egp-label">
+              السعر بالجنية المصري المستحق
+            </span>
+
+            <strong className="payment-balance-egp">
+              {formatEgp(totalOnHoldEgp)}
             </strong>
 
             <small>
@@ -724,6 +862,14 @@ export default function PaymentsPage() {
               {formatMoney(
                 totals?.paidUsd ?? 0
               )}
+            </strong>
+
+            <span className="payment-balance-egp-label">
+              السعر بالجنية المصري المستحق
+            </span>
+
+            <strong className="payment-balance-egp">
+              {formatEgp(totalPaidEgp)}
             </strong>
 
             <small>
@@ -1036,6 +1182,15 @@ export default function PaymentsPage() {
                                 )}
                               </strong>
 
+                              <div className="payment-row-egp">
+                                {formatEgp(
+                                  exchangeRate === null
+                                    ? null
+                                    : payment.balanceUsd *
+                                      exchangeRate
+                                )}
+                              </div>
+
                               {hasDebt && (
                                 <div
                                   style={{
@@ -1068,6 +1223,15 @@ export default function PaymentsPage() {
                                   payment.onHoldUsd
                                 )}
                               </strong>
+
+                              <div className="payment-row-egp">
+                                {formatEgp(
+                                  exchangeRate === null
+                                    ? null
+                                    : payment.onHoldUsd *
+                                      exchangeRate
+                                )}
+                              </div>
                             </td>
 
                             {/* FINED */}
@@ -1096,6 +1260,15 @@ export default function PaymentsPage() {
                                   payment.paidUsd
                                 )}
                               </strong>
+
+                              <div className="payment-row-egp">
+                                {formatEgp(
+                                  exchangeRate === null
+                                    ? null
+                                    : payment.paidUsd *
+                                      exchangeRate
+                                )}
+                              </div>
                             </td>
 
                             {/* EXPECTED PAYABLE */}
@@ -1224,7 +1397,7 @@ export default function PaymentsPage() {
                                     )
                                   }
                                   disabled={
-                                    payment.balanceUsd <=
+                                    payment.expectedPayableUsd <=
                                       0
                                   }
                                   style={{
@@ -1235,12 +1408,12 @@ export default function PaymentsPage() {
                                     borderRadius:
                                       "9px",
                                     background:
-                                      payment.balanceUsd >
+                                      payment.expectedPayableUsd >
                                       0
                                         ? "rgba(109,93,252,0.12)"
                                         : "rgba(255,255,255,0.04)",
                                     color:
-                                      payment.balanceUsd >
+                                      payment.expectedPayableUsd >
                                       0
                                         ? "#c4bfff"
                                         : "#64718a",
@@ -1257,6 +1430,36 @@ export default function PaymentsPage() {
                                 >
                                   Pay
                                 </button>
+
+                                {payment.paidUsd > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      undoLastPayment(
+                                        payment
+                                      )
+                                    }
+                                    disabled={
+                                      undoingPayment ===
+                                      payment.id
+                                    }
+                                    style={{
+                                      padding: "8px 11px",
+                                      border: "1px solid rgba(245,158,11,0.28)",
+                                      borderRadius: "9px",
+                                      background: "rgba(245,158,11,0.08)",
+                                      color: "#fcd34d",
+                                      fontSize: "12px",
+                                      fontWeight: 700,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    {undoingPayment ===
+                                    payment.id
+                                      ? "Undoing..."
+                                      : "Undo Pay"}
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -2055,11 +2258,30 @@ export default function PaymentsPage() {
                   }}
                 >
                   {formatMoney(
-                    payBoosterModal.balanceUsd
+                    payBoosterModal.expectedPayableUsd
                   )}
                 </strong>
               </div>
             </div>
+
+            <label className="login-form">
+              <span>
+                Amount to Pay (USD)
+              </span>
+
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={payAmount}
+                onChange={(event) =>
+                  setPayAmount(
+                    event.target.value
+                  )
+                }
+                required
+              />
+            </label>
 
             <label className="login-form">
               <span>
@@ -2107,7 +2329,7 @@ export default function PaymentsPage() {
 
                   <strong>
                     {formatMoney(
-                      payBoosterModal.balanceUsd
+                      Number(payAmount)
                     )}
                   </strong>
                 </div>
@@ -2152,7 +2374,7 @@ export default function PaymentsPage() {
                     }}
                   >
                     {(
-                      payBoosterModal.balanceUsd *
+                      Number(payAmount) *
                       Number(payExchangeRate)
                     ).toFixed(2)} EGP
                   </strong>

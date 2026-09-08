@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifySession } from "@/lib/auth";
+import { notifyBooster } from "@/lib/notifications";
 
 const ALLOWED_STATUSES = [
   "PENDING",
@@ -960,6 +961,28 @@ export async function PATCH(
           return updated;
         }
       );
+
+    if (
+      boosterId &&
+      (body.status !== undefined ||
+        body.boosterId !== undefined)
+    ) {
+      await notifyBooster({
+        boosterId,
+        type:
+          body.boosterId !== undefined
+            ? "ORDER_ASSIGNED"
+            : "ORDER_STATUS_UPDATED",
+        title:
+          body.boosterId !== undefined
+            ? "Order assignment updated"
+            : "Order status updated",
+        message:
+          body.boosterId !== undefined
+            ? `Order ${updatedOrder.id} was assigned to you.`
+            : `Order ${updatedOrder.id} is now ${status}.`,
+      });
+    }
 
     return NextResponse.json(
       updatedOrder

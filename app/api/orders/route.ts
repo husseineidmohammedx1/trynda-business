@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifySession } from "@/lib/auth";
+import { notifyBooster } from "@/lib/notifications";
 
 async function requireAdmin(request: NextRequest) {
   const token = request.cookies.get("session")?.value;
@@ -480,6 +481,15 @@ export async function POST(request: NextRequest) {
           payment: true,
         },
       });
+
+    if (boosterId) {
+      await notifyBooster({
+        boosterId,
+        type: "ORDER_ASSIGNED",
+        title: "New order assigned",
+        message: `Order ${order.id} (${order.title}) was assigned to you.`,
+      });
+    }
 
     return NextResponse.json(
       order,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifySession } from "@/lib/auth";
+import { notifyBooster } from "@/lib/notifications";
 
 async function requireAdmin(request: NextRequest) {
   const token = request.cookies.get("session")?.value;
@@ -261,6 +262,7 @@ export async function GET(request: NextRequest) {
           boosterId: true,
           netAmountUsd: true,
           paidAmountUsd: true,
+          paidAmountEgp: true,
           status: true,
           completedAt: true,
           releaseAt: true,
@@ -412,14 +414,24 @@ export async function GET(request: NextRequest) {
       const availableUsd =
         availablePayments.reduce(
           (sum, payment) =>
-            sum + Number(payment.netAmountUsd),
+            sum +
+            Math.max(
+              0,
+              Number(payment.netAmountUsd) -
+                Number(payment.paidAmountUsd ?? 0)
+            ),
           0
         );
 
       const onHoldUsd =
         holdPayments.reduce(
           (sum, payment) =>
-            sum + Number(payment.netAmountUsd),
+            sum +
+            Math.max(
+              0,
+              Number(payment.netAmountUsd) -
+                Number(payment.paidAmountUsd ?? 0)
+            ),
           0
         );
 
@@ -427,7 +439,7 @@ export async function GET(request: NextRequest) {
         boosterPayments
           .filter(
             (payment) =>
-              payment.status === "PAID" &&
+              Number(payment.paidAmountUsd ?? 0) > 0 &&
               payment.paidAt &&
               new Date(payment.paidAt) >=
                 range.start &&
@@ -733,6 +745,10 @@ export async function PATCH(
 
     const body = await request.json();
 
+    const action = String(
+      body.action || ""
+    ).trim();
+
     const boosterId = String(
       body.boosterId || ""
     ).trim();
@@ -740,6 +756,94 @@ export async function PATCH(
     const month = String(
       body.month || getCurrentMonth()
     ).trim();
+
+    if (action === "undoLastPayment") {
+      if (!boosterId) {
+        return NextResponse.json(
+          { error: "Booster ID is required" },
+          { status: 400 }
+        );
+      }
+
+      const lastPayment =
+        await prisma.payment.findFirst({
+          where: {
+            boosterId,
+            paidAmountUsd: { gt: 0 },
+            paidAt: { not: null },
+          },
+          orderBy: { paidAt: "desc" },
+          select: { paidAt: true },
+        });
+
+      if (!lastPayment?.paidAt) {
+        return NextResponse.json(
+          { error: "No payment to undo" },
+          { status: 400 }
+        );
+      }
+
+      const paidPayments =
+        await prisma.payment.findMany({
+          where: {
+            boosterId,
+            paidAt: lastPayment.paidAt,
+            paidAmountUsd: { gt: 0 },
+          },
+          select: {
+            id: true,
+            paidAmountUsd: true,
+            paidAmountEgp: true,
+            completedAt: true,
+            releaseAt: true,
+          },
+        });
+
+      const reversedUsd = paidPayments.reduce(
+        (sum, payment) =>
+          sum + Number(payment.paidAmountUsd ?? 0),
+        0
+      );
+
+      await prisma.$transaction(async (tx) => {
+        for (const payment of paidPayments) {
+          const shouldBeAvailable =
+            payment.completedAt &&
+            payment.releaseAt &&
+            payment.releaseAt <= new Date();
+
+          await tx.payment.update({
+            where: { id: payment.id },
+            data: {
+              status: shouldBeAvailable
+                ? "AVAILABLE"
+                : "PENDING",
+              paidAmountUsd: null,
+              paidAmountEgp: null,
+              paidExchangeRate: null,
+              paidAt: null,
+            },
+          });
+        }
+
+        await tx.user.update({
+          where: { id: boosterId },
+          data: {
+            totalPaidUsd: {
+              decrement: reversedUsd,
+            },
+            balanceUsd: {
+              increment: reversedUsd,
+            },
+          },
+        });
+      });
+
+      return NextResponse.json({
+        success: true,
+        reversedUsd,
+      });
+    }
 
     const exchangeRate =
       Number(body.exchangeRate);
@@ -789,11 +893,13 @@ export async function PATCH(
 
     await refreshAvailablePayments();
 
-    const available =
+    const payablePayments =
       await prisma.payment.findMany({
         where: {
           boosterId,
-          status: "AVAILABLE",
+          status: {
+            in: ["PENDING", "AVAILABLE"],
+          },
 
           order: {
             status: "COMPLETED",
@@ -808,6 +914,9 @@ export async function PATCH(
         select: {
           id: true,
           netAmountUsd: true,
+          paidAmountUsd: true,
+          paidAmountEgp: true,
+          status: true,
         },
 
         orderBy: {
@@ -815,11 +924,11 @@ export async function PATCH(
         },
       });
 
-    if (!available.length) {
+    if (!payablePayments.length) {
       return NextResponse.json(
         {
           error:
-            "No available balance to pay",
+            "No payable balance to pay",
         },
         {
           status: 400,
@@ -829,12 +938,14 @@ export async function PATCH(
 
     const totalAvailable =
       Number(
-        available
+        payablePayments
           .reduce(
             (sum, payment) =>
               sum +
-              Number(
-                payment.netAmountUsd
+              Math.max(
+                0,
+                Number(payment.netAmountUsd) -
+                  Number(payment.paidAmountUsd ?? 0)
               ),
             0
           )
@@ -874,14 +985,34 @@ export async function PATCH(
           .toFixed(2)
       );
 
-    const payableUsd =
-      Number(
-        Math.max(
-          0,
-          totalAvailable -
-            totalFines
-        ).toFixed(2)
+    const maximumPayableUsd = Number(
+      Math.max(
+        0,
+        totalAvailable - totalFines
+      ).toFixed(2)
+    );
+
+    const requestedAmount =
+      body.amountUsd === undefined
+        ? maximumPayableUsd
+        : Number(body.amountUsd);
+
+    if (
+      !Number.isFinite(requestedAmount) ||
+      requestedAmount <= 0
+    ) {
+      return NextResponse.json(
+        { error: "Invalid payment amount" },
+        { status: 400 }
       );
+    }
+
+    const payableUsd = Number(
+      Math.min(
+        requestedAmount,
+        maximumPayableUsd
+      ).toFixed(2)
+    );
 
     if (payableUsd <= 0) {
       return NextResponse.json(
@@ -895,28 +1026,38 @@ export async function PATCH(
       );
     }
 
-    const fineUsed =
-      Math.min(
-        totalFines,
-        totalAvailable
-      );
+    const fineUsed = Math.min(
+      totalFines,
+      Math.max(
+        0,
+        totalAvailable - payableUsd
+      )
+    );
 
     const paymentUpdates: {
       id: string;
       paidUsd: number;
+      remainingUsd: number;
+      status: "PENDING" | "AVAILABLE";
+      existingPaidUsd: number;
+      existingPaidEgp: number;
     }[] = [];
 
     let remainingToPay =
-      payableUsd;
+      Number(
+        (payableUsd + fineUsed).toFixed(2)
+      );
 
-    for (const payment of available) {
+    for (const payment of payablePayments) {
       if (remainingToPay <= 0) {
         break;
       }
 
       const amount =
-        Number(
-          payment.netAmountUsd
+        Math.max(
+          0,
+          Number(payment.netAmountUsd) -
+            Number(payment.paidAmountUsd ?? 0)
         );
 
       const paidUsd =
@@ -931,6 +1072,17 @@ export async function PATCH(
           Number(
             paidUsd.toFixed(2)
           ),
+        remainingUsd: amount,
+        status:
+          payment.status === "AVAILABLE"
+            ? "AVAILABLE"
+            : "PENDING",
+        existingPaidUsd: Number(
+          payment.paidAmountUsd ?? 0
+        ),
+        existingPaidEgp: Number(
+          payment.paidAmountEgp ?? 0
+        ),
       });
 
       remainingToPay =
@@ -953,10 +1105,19 @@ export async function PATCH(
             },
 
             data: {
-              status: "PAID",
+              status:
+                payment.paidUsd >=
+                payment.remainingUsd
+                  ? "PAID"
+                  : payment.status,
 
               paidAmountUsd:
-                payment.paidUsd,
+                Number(
+                  (
+                    payment.existingPaidUsd +
+                    payment.paidUsd
+                  ).toFixed(2)
+                ),
 
               paidExchangeRate:
                 exchangeRate,
@@ -964,8 +1125,9 @@ export async function PATCH(
               paidAmountEgp:
                 Number(
                   (
+                    payment.existingPaidEgp +
                     payment.paidUsd *
-                    exchangeRate
+                      exchangeRate
                   ).toFixed(2)
                 ),
 
@@ -1037,6 +1199,13 @@ export async function PATCH(
         });
       }
     );
+
+    await notifyBooster({
+      boosterId,
+      type: "PAYMENT_SENT",
+      title: "Payment sent",
+      message: `A payment of $${payableUsd.toFixed(2)} was sent to you.`,
+    });
 
     const paidEgp =
       Number(

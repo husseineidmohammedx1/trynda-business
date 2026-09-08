@@ -86,6 +86,7 @@ export async function GET(request: NextRequest) {
         active: true,
         createdAt: true,
         profileImageUrl: true,
+        telegramChatId: true,
 
         platformFeePercent: true,
         extraPenaltyPercent: true,
@@ -156,6 +157,13 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    const notifications =
+      await prisma.notification.findMany({
+        where: { userId: booster.id },
+        orderBy: { createdAt: "desc" },
+        take: 30,
+      });
+
     const serializedOrders = orders.map(
       (order) => {
         const plainOrder =
@@ -191,6 +199,7 @@ export async function GET(request: NextRequest) {
         name: booster.name,
         email: booster.email,
         profileImageUrl: booster.profileImageUrl,
+        telegramChatId: booster.telegramChatId,
 
         active: booster.active,
 
@@ -231,6 +240,15 @@ export async function GET(request: NextRequest) {
       },
 
       orders: serializedOrders,
+      notifications: notifications.map(
+        (notification) =>
+          serializeObject(
+            notification as unknown as Record<
+              string,
+              unknown
+            >
+          )
+      ),
     });
   } catch (error) {
     console.error(
@@ -265,16 +283,37 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const profileImageUrl =
-      body.profileImageUrl === null
-        ? null
-        : String(body.profileImageUrl || "");
+
+    if (body.action === "markNotificationsRead") {
+      await prisma.notification.updateMany({
+        where: {
+          userId: String(session.userId),
+          readAt: null,
+        },
+        data: { readAt: new Date() },
+      });
+
+      return NextResponse.json({
+        success: true,
+      });
+    }
+
+    const data: {
+      profileImageUrl?: string | null;
+    } = {};
+
+    if (body.profileImageUrl !== undefined) {
+      data.profileImageUrl =
+        body.profileImageUrl === null
+          ? null
+          : String(body.profileImageUrl || "");
+    }
 
     if (
-      profileImageUrl &&
+      data.profileImageUrl &&
       (!/^data:image\/(jpeg|png|webp);base64,/.test(
-        profileImageUrl
-      ) || profileImageUrl.length > 1_500_000)
+        data.profileImageUrl
+      ) || data.profileImageUrl.length > 1_500_000)
     ) {
       return NextResponse.json(
         {
@@ -287,7 +326,7 @@ export async function PATCH(request: NextRequest) {
 
     const booster = await prisma.user.update({
       where: { id: String(session.userId) },
-      data: { profileImageUrl },
+      data,
       select: {
         id: true,
         name: true,

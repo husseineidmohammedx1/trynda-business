@@ -36,6 +36,7 @@ model User {
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   profileImageUrl String? @db.Text
+  telegramChatId String?
 
   // Default platform fee for this booster
   platformFeePercent Decimal @default(7) @db.Decimal(5, 2)
@@ -51,6 +52,7 @@ model User {
   orders     Order[]     @relation("BoosterOrders")
   payments   Payment[]   @relation("BoosterPayments")
   deductions Deduction[]
+  notifications Notification[]
 
   passwordResetTokens PasswordResetToken[]
 }
@@ -150,6 +152,19 @@ model Deduction {
   user   User?   @relation(fields: [userId], references: [id])
 
   createdAt DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String   @db.Text
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model BusinessSettings {

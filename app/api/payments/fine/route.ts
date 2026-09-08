@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifySession } from "@/lib/auth";
+import { notifyBooster } from "@/lib/notifications";
 
 async function requireAdmin(request: NextRequest) {
   const token = request.cookies.get("session")?.value;
@@ -147,6 +148,13 @@ export async function POST(request: NextRequest) {
           remainingUsd: finalAmount,
         },
       });
+
+    await notifyBooster({
+      boosterId,
+      type: "FINE_ADDED",
+      title: "New deduction added",
+      message: `A deduction of $${finalAmount.toFixed(2)} was added. Reason: ${reason}`,
+    });
 
     return NextResponse.json(
       {

@@ -35,6 +35,16 @@ type ApiResponse = {
   booster?: Booster;
 
   orders?: Record<string, unknown>[];
+  notifications?: NotificationItem[];
+};
+
+type NotificationItem = {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  readAt: string | null;
+  createdAt: string;
 };
 
 type ExchangeRateResponse = {
@@ -319,6 +329,9 @@ export default function BoosterPage() {
       "payments"
     >("overview");
 
+  const [showNotifications, setShowNotifications] =
+    useState(false);
+
   async function loadPortal(
     refresh = false
   ) {
@@ -358,7 +371,6 @@ export default function BoosterPage() {
       }
 
       setData(result);
-
       const exchangeResponse = await fetch(
         "/api/exchange-rate",
         {
@@ -404,6 +416,56 @@ export default function BoosterPage() {
     } finally {
       router.replace("/login");
       router.refresh();
+    }
+  }
+
+  async function openNotifications() {
+    const willOpen = !showNotifications;
+    setShowNotifications(willOpen);
+
+    if (!willOpen) {
+      return;
+    }
+
+    const hasUnread = notifications.some(
+      (notification) => !notification.readAt
+    );
+
+    if (!hasUnread) {
+      return;
+    }
+
+    try {
+      await fetch("/api/booster/me", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "markNotificationsRead",
+        }),
+      });
+
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              notifications: (current.notifications ?? []).map(
+                (notification) => ({
+                  ...notification,
+                  readAt:
+                    notification.readAt ??
+                    new Date().toISOString(),
+                })
+              ),
+            }
+          : current
+      );
+    } catch (requestError) {
+      console.error(
+        "Failed to mark notifications read:",
+        requestError
+      );
     }
   }
 
@@ -496,6 +558,7 @@ export default function BoosterPage() {
     }
   }
 
+
   const booster = data?.booster;
 
   const dueEgp =
@@ -506,6 +569,11 @@ export default function BoosterPage() {
   const orders = useMemo(
     () => data?.orders ?? [],
     [data?.orders]
+  );
+
+  const notifications = useMemo(
+    () => data?.notifications ?? [],
+    [data?.notifications]
   );
 
   const activeOrders = useMemo(
@@ -713,6 +781,34 @@ export default function BoosterPage() {
             <span>◇</span>
             Payments
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("overview");
+              window.setTimeout(() => {
+                document
+                  .getElementById("booster-notifications")
+                  ?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                  });
+              }, 0);
+            }}
+          >
+            <span>◉</span>
+            Notifications
+
+            {notifications.filter(
+              (notification) => !notification.readAt
+            ).length > 0 && (
+              <em>
+                {notifications.filter(
+                  (notification) => !notification.readAt
+                ).length}
+              </em>
+            )}
+          </button>
         </nav>
 
         <div className="booster-sidebar-bottom">
@@ -767,6 +863,81 @@ export default function BoosterPage() {
           </div>
 
           <div className="booster-header-actions">
+            <div className="booster-notification-menu">
+              <button
+                type="button"
+                className={
+                  notifications.some(
+                    (notification) => !notification.readAt
+                  )
+                    ? "booster-bell-button has-unread"
+                    : "booster-bell-button"
+                }
+                aria-label="Open notifications"
+                onClick={() =>
+                  void openNotifications()
+                }
+              >
+                <span className="booster-bell-icon">
+                  🔔
+                </span>
+                {notifications.filter(
+                  (notification) => !notification.readAt
+                ).length > 0 && (
+                  <span className="booster-bell-count">
+                    {notifications.filter(
+                      (notification) => !notification.readAt
+                    ).length}
+                  </span>
+                )}
+              </button>
+
+              {showNotifications && (
+                <div className="booster-notification-dropdown">
+                  <div className="booster-notification-dropdown-head">
+                    <strong>Notifications</strong>
+                    <span>
+                      {notifications.length}
+                    </span>
+                  </div>
+
+                  {notifications.length === 0 ? (
+                    <div className="booster-dropdown-empty">
+                      No notifications yet.
+                    </div>
+                  ) : (
+                    <div className="booster-dropdown-list">
+                      {notifications.map((notification) => (
+                        <article
+                          key={notification.id}
+                          className={
+                            notification.readAt
+                              ? "booster-dropdown-item"
+                              : "booster-dropdown-item unread"
+                          }
+                        >
+                          <span className="booster-dropdown-dot" />
+                          <div>
+                            <strong>
+                              {notification.title}
+                            </strong>
+                            <p>
+                              {notification.message}
+                            </p>
+                            <time>
+                              {formatDate(
+                                notification.createdAt
+                              )}
+                            </time>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="booster-role-badge">
               <span />
               BOOSTER
@@ -903,7 +1074,58 @@ export default function BoosterPage() {
                     </button>
                   )}
                 </div>
+
               </article>
+            </section>
+
+            <section
+              id="booster-notifications"
+              className="booster-notifications-panel"
+            >
+              <div className="booster-section-heading">
+                <div>
+                  <span>NOTIFICATIONS</span>
+                  <h2>Recent activity</h2>
+                </div>
+                <strong>
+                  {notifications.filter(
+                    (notification) => !notification.readAt
+                  ).length} unread
+                </strong>
+              </div>
+
+              {notifications.length === 0 ? (
+                <p className="booster-notifications-empty">
+                  No notifications yet.
+                </p>
+              ) : (
+                <div className="booster-notifications-list">
+                  {notifications.map((notification) => (
+                    <article
+                      key={notification.id}
+                      className={
+                        notification.readAt
+                          ? "booster-notification"
+                          : "booster-notification unread"
+                      }
+                    >
+                      <div>
+                        <strong>
+                          {notification.title}
+                        </strong>
+                        <p>
+                          {notification.message}
+                        </p>
+                      </div>
+                      <time>
+                        {formatDate(
+                          notification.createdAt
+                        )}
+                      </time>
+                    </article>
+                  ))}
+                </div>
+              )}
             </section>
 
             <section className="booster-stats-grid">

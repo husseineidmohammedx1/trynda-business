@@ -11,6 +11,23 @@ Initial Next.js + Prisma + PostgreSQL MVP.
 5. `npx prisma db push`
 6. `npm run dev`
 
+## Telegram notifications
+
+The booster portal stores an optional Telegram Chat ID and sends notification messages through a Telegram Bot when this environment variable is configured:
+
+```env
+TELEGRAM_BOT_TOKEN="your-telegram-bot-token"
+TELEGRAM_WEBHOOK_SECRET="a-long-random-secret"
+```
+
+The admin configures the webhook once using the public site URL:
+
+```text
+https://api.telegram.org/botBOT_TOKEN/setWebhook?url=https://YOUR_DOMAIN.com/api/telegram/webhook&secret_token=TELEGRAM_WEBHOOK_SECRET
+```
+
+Each booster then opens the bot, presses `/start`, and sends the email used for their active Booster account. The server links the Telegram chat automatically; boosters cannot edit the link from the website.
+
 ## Render
 
 1. Create a PostgreSQL database in Render.
