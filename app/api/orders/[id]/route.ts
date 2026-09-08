@@ -144,6 +144,10 @@ export async function PATCH(
     const body =
       await request.json();
 
+    const action = String(
+      body.action || ""
+    ).trim();
+
     // =================================================
     // FIND ORDER
     // =================================================
@@ -167,6 +171,147 @@ export async function PATCH(
           status: 404,
         }
       );
+    }
+
+    if (action === "updatePrice") {
+      const priceUsd = Number(body.priceUsd);
+
+      if (
+        !Number.isFinite(priceUsd) ||
+        priceUsd <= 0
+      ) {
+        return NextResponse.json(
+          {
+            error: "Invalid order price",
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+
+      const order = await prisma.order.findUnique({
+        where: {
+          id: params.id,
+        },
+
+        include: {
+          payment: true,
+        },
+      });
+
+      if (!order) {
+        return NextResponse.json(
+          {
+            error: "Order not found",
+          },
+          {
+            status: 404,
+          }
+        );
+      }
+
+      const feePercent =
+        Number(order.platformFeePercent || 0);
+
+      const penaltyPercent =
+        Number(
+          order.extraPenaltyPercent || 0
+        );
+
+      const platformFee =
+        priceUsd *
+        (feePercent / 100);
+
+      const extraPenalty =
+        priceUsd *
+        (penaltyPercent / 100);
+
+      const boosterAmount =
+        priceUsd -
+        platformFee -
+        extraPenalty;
+
+      if (boosterAmount < 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Price is too low for the current fee settings",
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+
+      const exchangeRate =
+        Number(order.exchangeRate || 0);
+
+      const amountEgp =
+        boosterAmount * exchangeRate;
+
+      const updated =
+        await prisma.$transaction(
+          async (tx) => {
+            const updatedOrder =
+              await tx.order.update({
+                where: {
+                  id: params.id,
+                },
+
+                data: {
+                  priceUsd,
+
+                  platformFeeUsd:
+                    platformFee,
+
+                  extraPenaltyUsd:
+                    extraPenalty,
+
+                  boosterAmountUsd:
+                    boosterAmount,
+                },
+              });
+
+            if (order.payment) {
+              await tx.payment.update({
+                where: {
+                  id: order.payment.id,
+                },
+
+                data: {
+                  orderPriceUsd:
+                    priceUsd,
+
+                  platformFeeUsd:
+                    platformFee,
+
+                  extraPenaltyUsd:
+                    extraPenalty,
+
+                  boosterAmountUsd:
+                    boosterAmount,
+
+                  netAmountUsd:
+                    boosterAmount -
+                    Number(
+                      order.payment.finedUsd || 0
+                    ),
+
+                  amountEgp,
+                  exchangeRate,
+                },
+              });
+            }
+
+            return updatedOrder;
+          }
+        );
+
+      return NextResponse.json({
+        success: true,
+        order: updated,
+      });
     }
 
     // =================================================

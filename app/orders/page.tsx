@@ -117,6 +117,14 @@ export default function OrdersPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [editingPriceOrder, setEditingPriceOrder] =
+    useState<Order | null>(null);
+
+  const [newOrderPrice, setNewOrderPrice] =
+    useState("");
+
+  const [updatingPrice, setUpdatingPrice] =
+    useState(false);
 
   const [showModal, setShowModal] = useState(false);
 
@@ -450,6 +458,75 @@ export default function OrdersPage() {
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function updateOrderPrice(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    if (!editingPriceOrder) {
+      return;
+    }
+
+    const price = Number(newOrderPrice);
+
+    if (!Number.isFinite(price) || price <= 0) {
+      setError("Please enter a valid order price.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Change order "${editingPriceOrder.title}" price to $${price.toFixed(
+        2
+      )}?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setUpdatingPrice(true);
+      setError("");
+
+      const response = await fetch(
+        `/api/orders/${encodeURIComponent(
+          editingPriceOrder.id
+        )}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "updatePrice",
+            priceUsd: price,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Failed to update order price"
+        );
+      }
+
+      setEditingPriceOrder(null);
+      setNewOrderPrice("");
+
+      await loadOrders();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update order price"
+      );
+    } finally {
+      setUpdatingPrice(false);
     }
   }
 
@@ -1564,6 +1641,21 @@ export default function OrdersPage() {
                                 event.stopPropagation()
                               }
                             >
+                              <button
+                                type="button"
+                                className="ui-button--primary"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+
+                                  setEditingPriceOrder(order);
+                                  setNewOrderPrice(
+                                    Number(order.priceUsd).toFixed(2)
+                                  );
+                                }}
+                              >
+                                Edit Price
+                              </button>
+
                               <button
                                 type="button"
                                 onClick={() =>
@@ -3012,6 +3104,150 @@ export default function OrdersPage() {
                   {saving
                     ? "Creating..."
                     : "Create Order"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingPriceOrder && (
+        <div
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              if (!updatingPrice) {
+                setEditingPriceOrder(null);
+              }
+            }
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            display: "grid",
+            placeItems: "center",
+            padding: "20px",
+            background: "rgba(0,0,0,0.75)",
+            backdropFilter: "blur(10px)",
+          }}
+        >
+          <div
+            style={{
+              width: "min(420px, 100%)",
+              padding: "24px",
+              border:
+                "1px solid rgba(117,104,255,0.22)",
+              borderRadius: "18px",
+              background:
+                "linear-gradient(145deg,#121b2f,#080e1b)",
+              boxShadow:
+                "0 30px 90px rgba(0,0,0,0.55)",
+            }}
+          >
+            <div
+              style={{
+                marginBottom: "18px",
+              }}
+            >
+              <div
+                style={{
+                  color: "#8f84ff",
+                  fontSize: "8px",
+                  fontWeight: 900,
+                  letterSpacing: ".15em",
+                }}
+              >
+                ORDER PRICE
+              </div>
+
+              <h2
+                style={{
+                  margin: "6px 0 0",
+                  fontSize: "20px",
+                }}
+              >
+                Change Order Price
+              </h2>
+
+              <p
+                className="muted"
+                style={{
+                  marginTop: "6px",
+                  fontSize: "11px",
+                }}
+              >
+                {editingPriceOrder.title}
+              </p>
+            </div>
+
+            <form
+              onSubmit={updateOrderPrice}
+              style={{
+                display: "grid",
+                gap: "14px",
+              }}
+            >
+              <label className="login-form">
+                <span>NEW PRICE (USD)</span>
+
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={newOrderPrice}
+                  onChange={(event) =>
+                    setNewOrderPrice(
+                      event.target.value
+                    )
+                  }
+                  required
+                  autoFocus
+                />
+              </label>
+
+              <div
+                style={{
+                  padding: "11px 12px",
+                  border:
+                    "1px solid rgba(245,158,11,0.12)",
+                  borderRadius: "10px",
+                  background:
+                    "rgba(245,158,11,0.04)",
+                  color: "#fcd34d",
+                  fontSize: "10px",
+                  lineHeight: 1.5,
+                }}
+              >
+                The platform fee, penalty and booster
+                amount will be recalculated from the
+                new price.
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: "8px",
+                  justifyContent: "flex-end",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditingPriceOrder(null)
+                  }
+                  disabled={updatingPrice}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="ui-button--primary"
+                  disabled={updatingPrice}
+                >
+                  {updatingPrice
+                    ? "Updating..."
+                    : "Save Price"}
                 </button>
               </div>
             </form>
