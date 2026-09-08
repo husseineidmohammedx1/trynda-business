@@ -114,6 +114,8 @@ function getStatusStyle(status: string) {
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [boosters, setBoosters] = useState<Booster[]>([]);
+  const [orderSearch, setOrderSearch] =
+    useState("");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -690,6 +692,17 @@ export default function OrdersPage() {
         order.status === "COMPLETED"
     ).length;
 
+  const filteredOrders =
+    orderSearch.trim() === ""
+      ? orders
+      : orders.filter((order) =>
+          order.id
+            .toLowerCase()
+            .includes(
+              orderSearch.trim().toLowerCase()
+            )
+        );
+
   // =====================================================
   // PREVIEW
   // =====================================================
@@ -956,6 +969,26 @@ export default function OrdersPage() {
                   : "Refresh"}
               </span>
             </button>
+
+            <input
+              type="search"
+              value={orderSearch}
+              onChange={(event) =>
+                setOrderSearch(event.target.value)
+              }
+              placeholder="Search by Order ID"
+              aria-label="Search orders by ID"
+              style={{
+                width: "220px",
+                minHeight: "40px",
+                padding: "10px 12px",
+                border: "1px solid rgba(148,163,184,0.18)",
+                borderRadius: "10px",
+                background: "rgba(8,12,24,0.72)",
+                color: "#f8fafc",
+                outline: "none",
+              }}
+            />
           </div>
 
           {loading ? (
@@ -982,6 +1015,19 @@ export default function OrdersPage() {
               >
                 Create Order
               </button>
+            </div>
+          ) : filteredOrders.length === 0 ? (
+            <div className="empty">
+              <div className="empty-icon">
+                🔎
+              </div>
+
+              <h3>No matching order</h3>
+
+              <p>
+                No order was found for ID
+                "{orderSearch}".
+              </p>
             </div>
           ) : (
             <div
@@ -1113,7 +1159,7 @@ export default function OrdersPage() {
                 </thead>
 
                 <tbody>
-                  {orders.map(
+                  {filteredOrders.map(
                     (order) => {
                       const original =
                         Number(
