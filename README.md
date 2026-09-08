@@ -12,6 +12,25 @@ Initial Next.js + Prisma + PostgreSQL MVP.
 6. `npm run dev`
 
 ## Render
-Create a PostgreSQL database, set `DATABASE_URL`, build with `npm install && npx prisma generate && npm run build`, start with `npm start`.
 
-Authentication/API routes are the next implementation step; the current UI is intentionally a clean foundation.
+1. Create a PostgreSQL database in Render.
+2. Create a Web Service from the GitHub repository.
+3. Use these settings:
+   - Build Command: `npm ci && npm run build`
+   - Start Command: `npm start`
+   - Environment: `Node`
+4. Add these environment variables to the Web Service:
+   - `DATABASE_URL`: the internal database URL from the Render PostgreSQL service
+   - `AUTH_SECRET`: a long random value, different from local development
+   - `GMAIL_USER`: the Gmail address used to send reset emails
+   - `GMAIL_APP_PASSWORD`: a Gmail App Password, not the normal Gmail password
+5. After the first deploy, open the Web Service Shell and run:
+
+   ```bash
+   npx prisma db push
+   npx tsx create-admin.ts
+   ```
+
+   Use a new admin password before production. The database must be available before running these commands.
+
+Do not commit `.env`, `.env.local`, `.next`, or real credentials. Set secrets in Render Environment Variables instead.
