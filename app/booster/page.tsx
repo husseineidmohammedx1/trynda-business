@@ -37,6 +37,10 @@ type ApiResponse = {
   orders?: Record<string, unknown>[];
 };
 
+type ExchangeRateResponse = {
+  rate?: number;
+};
+
 function formatMoney(value: unknown) {
   const number = Number(value ?? 0);
 
@@ -45,6 +49,16 @@ function formatMoney(value: unknown) {
   }
 
   return `$${number.toFixed(2)}`;
+}
+
+function formatEgp(value: unknown) {
+  const number = Number(value ?? 0);
+
+  if (!Number.isFinite(number)) {
+    return "—";
+  }
+
+  return `${number.toFixed(2)} EGP`;
 }
 
 async function resizeProfileImage(file: File) {
@@ -285,6 +299,9 @@ export default function BoosterPage() {
   const [error, setError] =
     useState("");
 
+  const [exchangeRate, setExchangeRate] =
+    useState<number | null>(null);
+
   const [savingProfileImage, setSavingProfileImage] =
     useState(false);
 
@@ -341,6 +358,25 @@ export default function BoosterPage() {
       }
 
       setData(result);
+
+      const exchangeResponse = await fetch(
+        "/api/exchange-rate",
+        {
+          cache: "no-store",
+        }
+      );
+
+      if (exchangeResponse.ok) {
+        const exchangeResult =
+          (await exchangeResponse.json()) as ExchangeRateResponse;
+        const rate = Number(exchangeResult.rate);
+
+        setExchangeRate(
+          Number.isFinite(rate) && rate > 0
+            ? rate
+            : null
+        );
+      }
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -461,6 +497,11 @@ export default function BoosterPage() {
   }
 
   const booster = data?.booster;
+
+  const dueEgp =
+    exchangeRate !== null && booster?.balanceUsd !== undefined
+      ? Number(booster.balanceUsd) * exchangeRate
+      : null;
 
   const orders = useMemo(
     () => data?.orders ?? [],
@@ -773,6 +814,14 @@ export default function BoosterPage() {
                     {formatMoney(
                       booster?.balanceUsd
                     )}
+                  </strong>
+
+                  <span className="booster-balance-egp-label">
+                    السعر بالجنية المصري المستحق
+                  </span>
+
+                  <strong className="booster-balance-egp">
+                    {formatEgp(dueEgp)}
                   </strong>
 
                   <small>
