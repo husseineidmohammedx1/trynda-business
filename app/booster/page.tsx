@@ -68,7 +68,7 @@ function formatEgp(value: unknown) {
     return "—";
   }
 
-  return `${number.toFixed(2)} EGP`;
+  return `${number.toFixed(2)} جنيه مصري`;
 }
 
 async function resizeProfileImage(file: File) {
@@ -1855,8 +1855,8 @@ function PaymentsTable({
         <thead>
           <tr>
             <th>Order</th>
-            <th>Gross</th>
-            <th>Net</th>
+            <th>الإجمالي قبل الخصم</th>
+            <th>الإجمالي بعد الخصم</th>
             <th>Status</th>
             <th>Paid</th>
             <th />
@@ -1872,6 +1872,23 @@ function PaymentsTable({
                   unknown
                 >;
 
+              const paymentExchangeRate =
+                Number(
+                  payment.exchangeRate ??
+                    order.exchangeRate ??
+                    0
+                );
+
+              const grossUsd = Number(
+                payment.orderPriceUsd ??
+                  findOrderPrice(order)
+              );
+
+              const netUsd = Number(
+                payment.netAmountUsd ??
+                  findOrderEarnings(order)
+              );
+
               return (
                 <tr
                   key={String(
@@ -1880,7 +1897,7 @@ function PaymentsTable({
                       index
                   )}
                 >
-                  <td>
+                  <td className="booster-payment-order-title">
                     {String(
                       findOrderTitle(
                         order
@@ -1890,22 +1907,31 @@ function PaymentsTable({
 
                   <td>
                     {formatMoney(
-                      payment.orderPriceUsd ??
-                        findOrderPrice(
-                          order
-                        )
+                      grossUsd
                     )}
+
+                    <small className="booster-egp-amount">
+                      {formatEgp(
+                        grossUsd *
+                          paymentExchangeRate
+                      )}
+                    </small>
                   </td>
 
                   <td>
                     <strong className="money-success">
                       {formatMoney(
-                        payment.netAmountUsd ??
-                          findOrderEarnings(
-                            order
-                          )
+                        netUsd
                       )}
                     </strong>
+
+                    <small className="booster-egp-amount success booster-payment-egp-total">
+                      بعد الخصم بالجنيه المصري: {" "}
+                      {formatEgp(
+                        netUsd *
+                          paymentExchangeRate
+                      )}
+                    </small>
                   </td>
 
                   <td>
