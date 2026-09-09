@@ -122,6 +122,27 @@ export default function OrdersPage() {
   const [editingPriceOrder, setEditingPriceOrder] =
     useState<Order | null>(null);
 
+  const [editingInfoOrder, setEditingInfoOrder] =
+    useState<Order | null>(null);
+
+  const [savingInfo, setSavingInfo] =
+    useState(false);
+
+  const [editOrderInfo, setEditOrderInfo] =
+    useState({
+      title: "",
+      game: "World of Warcraft",
+      customer: "",
+      description: "",
+      characterName: "",
+      battleTag: "",
+      faction: "",
+      serverName: "",
+      vpnLocation: "",
+      region: "",
+      boosterId: "",
+    });
+
   const [newOrderPrice, setNewOrderPrice] =
     useState("");
 
@@ -529,6 +550,72 @@ export default function OrdersPage() {
       );
     } finally {
       setUpdatingPrice(false);
+    }
+  }
+
+  function openEditInfoModal(order: Order) {
+    setEditingInfoOrder(order);
+    setEditOrderInfo({
+      title: order.title,
+      game: order.game,
+      customer: order.customer || "",
+      description: order.description || "",
+      characterName: order.characterName || "",
+      battleTag: order.battleTag || "",
+      faction: order.faction || "",
+      serverName: order.serverName || "",
+      vpnLocation: order.vpnLocation || "",
+      region: order.region || "",
+      boosterId: order.boosterId || "",
+    });
+    setError("");
+  }
+
+  async function saveOrderInfo(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    if (!editingInfoOrder) {
+      return;
+    }
+
+    try {
+      setSavingInfo(true);
+      setError("");
+
+      const response = await fetch(
+        `/api/orders/${encodeURIComponent(
+          editingInfoOrder.id
+        )}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(editOrderInfo),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            "Failed to update order information"
+        );
+      }
+
+      setEditingInfoOrder(null);
+      await loadOrders();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update order information"
+      );
+    } finally {
+      setSavingInfo(false);
     }
   }
 
@@ -1687,6 +1774,27 @@ export default function OrdersPage() {
                                 event.stopPropagation()
                               }
                             >
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openEditInfoModal(order);
+                                }}
+                                style={{
+                                  marginRight: "7px",
+                                  padding: "8px 12px",
+                                  border: "1px solid rgba(96,165,250,0.28)",
+                                  borderRadius: "9px",
+                                  background: "rgba(96,165,250,0.1)",
+                                  color: "#93c5fd",
+                                  fontSize: "12px",
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Edit Info
+                              </button>
+
                               {order.payment?.status !==
                                 "PAID" && (
                                 <button
@@ -3153,6 +3261,177 @@ export default function OrdersPage() {
                   {saving
                     ? "Creating..."
                     : "Create Order"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingInfoOrder && (
+        <div
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !savingInfo
+            ) {
+              setEditingInfoOrder(null);
+            }
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9998,
+            display: "grid",
+            placeItems: "center",
+            padding: "20px",
+            background: "rgba(0,0,0,0.76)",
+          }}
+        >
+          <div
+            style={{
+              width: "min(760px, 100%)",
+              maxHeight: "calc(100vh - 40px)",
+              overflowY: "auto",
+              padding: "26px",
+              border: "1px solid #29344d",
+              borderRadius: "18px",
+              background: "#10172a",
+              boxShadow: "0 30px 100px rgba(0,0,0,0.6)",
+            }}
+          >
+            <h2 style={{ margin: "0 0 6px" }}>
+              Edit Order Information
+            </h2>
+
+            <p className="muted" style={{ marginTop: 0 }}>
+              Update the order details while it is being worked on.
+            </p>
+
+            <form
+              onSubmit={saveOrderInfo}
+              style={{
+                display: "grid",
+                gap: "14px",
+              }}
+            >
+              <label className="login-form">
+                <span>Order Title</span>
+                <input
+                  value={editOrderInfo.title}
+                  onChange={(event) =>
+                    setEditOrderInfo({
+                      ...editOrderInfo,
+                      title: event.target.value,
+                    })
+                  }
+                  required
+                />
+              </label>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <label className="login-form">
+                  <span>Game</span>
+                  <input
+                    value={editOrderInfo.game}
+                    onChange={(event) =>
+                      setEditOrderInfo({
+                        ...editOrderInfo,
+                        game: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+
+                <label className="login-form">
+                  <span>Customer</span>
+                  <input
+                    value={editOrderInfo.customer}
+                    onChange={(event) =>
+                      setEditOrderInfo({
+                        ...editOrderInfo,
+                        customer: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+              </div>
+
+              <label className="login-form">
+                <span>Order Description</span>
+                <textarea
+                  value={editOrderInfo.description}
+                  onChange={(event) =>
+                    setEditOrderInfo({
+                      ...editOrderInfo,
+                      description: event.target.value,
+                    })
+                  }
+                  rows={4}
+                />
+              </label>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                {([
+                  ["characterName", "Character Name"],
+                  ["battleTag", "BattleTag"],
+                  ["faction", "Faction"],
+                  ["serverName", "Server"],
+                  ["vpnLocation", "VPN Location"],
+                  ["region", "Region"],
+                ] as const).map(([field, label]) => (
+                  <label className="login-form" key={field}>
+                    <span>{label}</span>
+                    <input
+                      value={editOrderInfo[field]}
+                      onChange={(event) =>
+                        setEditOrderInfo({
+                          ...editOrderInfo,
+                          [field]: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <label className="login-form">
+                <span>Assigned Booster</span>
+                <select
+                  value={editOrderInfo.boosterId}
+                  onChange={(event) =>
+                    setEditOrderInfo({
+                      ...editOrderInfo,
+                      boosterId: event.target.value,
+                    })
+                  }
+                >
+                  <option value="">Unassigned</option>
+                  {boosters.map((booster) => (
+                    <option
+                      key={booster.id}
+                      value={booster.id}
+                    >
+                      {booster.name} ({booster.email})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingInfoOrder(null)}
+                  disabled={savingInfo}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingInfo}
+                  className="ui-button--primary"
+                >
+                  {savingInfo ? "Saving..." : "Save Information"}
                 </button>
               </div>
             </form>
