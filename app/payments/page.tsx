@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLanguage } from "@/app/language-provider";
 
 type Fine = {
   id: string;
@@ -39,11 +40,19 @@ type PaymentDetail = {
   paidAt: string | null;
 };
 
+type PaymentMethod =
+  | "VODAFONE_CASH"
+  | "INSTAPAY";
+
 type BoosterPayment = {
   id: string;
   name: string;
   email: string;
+  profileImageUrl?: string | null;
   active: boolean;
+
+  paymentMethod: PaymentMethod | null;
+  paymentNumber: string | null;
 
   orders: number;
 
@@ -174,6 +183,7 @@ function getHoldTime(
 }
 
 export default function PaymentsPage() {
+  const { isArabic } = useLanguage();
   const [payments, setPayments] =
     useState<BoosterPayment[]>([]);
 
@@ -218,6 +228,11 @@ export default function PaymentsPage() {
 
   const [payAmount, setPayAmount] =
     useState("");
+    const [payPaymentMethod, setPayPaymentMethod] =
+  useState<PaymentMethod | "">("");
+
+const [payPaymentNumber, setPayPaymentNumber] =
+  useState("");
 
   const [savingPayment, setSavingPayment] =
     useState(false);
@@ -326,30 +341,47 @@ export default function PaymentsPage() {
   // =====================================================
 
   function openPayModal(
-    booster: BoosterPayment
-  ) {
-    if (booster.expectedPayableUsd <= 0) {
-      return;
-    }
-
-    setPayBoosterModal(booster);
-    setPayExchangeRate("");
-    setPayAmount(
-      booster.expectedPayableUsd.toFixed(2)
-    );
-    setError("");
+  booster: BoosterPayment
+) {
+  if (booster.expectedPayableUsd <= 0) {
+    return;
   }
+
+  setPayBoosterModal(booster);
+
+  setPayExchangeRate(
+    exchangeRate !== null
+      ? exchangeRate.toFixed(4)
+      : ""
+  );
+
+  setPayAmount(
+    booster.expectedPayableUsd.toFixed(2)
+  );
+
+  setPayPaymentMethod(
+    booster.paymentMethod ?? ""
+  );
+
+  setPayPaymentNumber(
+    booster.paymentNumber ?? ""
+  );
+
+  setError("");
+}
 
   function closePayModal() {
-    if (savingPayment) {
-      return;
-    }
-
-    setPayBoosterModal(null);
-    setPayExchangeRate("");
-    setPayAmount("");
-    setError("");
+  if (savingPayment) {
+    return;
   }
+
+  setPayBoosterModal(null);
+  setPayExchangeRate("");
+  setPayAmount("");
+  setPayPaymentMethod("");
+  setPayPaymentNumber("");
+  setError("");
+}
 
   async function payBooster() {
     if (!payBoosterModal) {
@@ -382,12 +414,49 @@ export default function PaymentsPage() {
       );
       return;
     }
+    if (
+  !Number.isFinite(rate) ||
+  rate <= 0
+) {
+  setError(
+    "Please enter a valid exchange rate."
+  );
+  return;
+}
+
+if (
+  !Number.isFinite(amount) ||
+  amount <= 0 ||
+  amount > payBoosterModal.expectedPayableUsd
+) {
+  setError(
+    "Enter an amount up to the expected payable balance."
+  );
+  return;
+}
+
+if (
+  payPaymentMethod !== "VODAFONE_CASH" &&
+  payPaymentMethod !== "INSTAPAY"
+) {
+  setError(
+    "Please select a payment method."
+  );
+  return;
+}
+
+if (!payPaymentNumber.trim()) {
+  setError(
+    "Please enter the booster payment number."
+  );
+  return;
+}
 
     const confirmed = window.confirm(
-      `Confirm payment of ${formatMoney(
-        payBoosterModal.expectedPayableUsd
-      )} to ${payBoosterModal.name}?`
-    );
+  `Confirm payment of ${formatMoney(
+    amount
+  )} to ${payBoosterModal.name}?`
+);
 
     if (!confirmed) {
       return;
@@ -405,13 +474,14 @@ export default function PaymentsPage() {
             "Content-Type":
               "application/json",
           },
-          body: JSON.stringify({
-            boosterId:
-              payBoosterModal.id,
-            month,
-            exchangeRate: rate,
-            amountUsd: amount,
-          }),
+ body: JSON.stringify({
+  boosterId: payBoosterModal.id,
+  month,
+  exchangeRate: rate,
+  amountUsd: amount,
+  paymentMethod: payPaymentMethod,
+  paymentNumber: payPaymentNumber.trim(),
+}),
         }
       );
 
@@ -429,12 +499,14 @@ export default function PaymentsPage() {
 
         throw new Error(message);
       }
+setPayBoosterModal(null);
+setPayExchangeRate("");
+setPayAmount("");
+setPayPaymentMethod("");
+setPayPaymentNumber("");
 
-      setPayBoosterModal(null);
-      setPayExchangeRate("");
-      setPayAmount("");
-
-      await loadPayments();
+await loadPayments();
+      
     } catch (err) {
       setError(
         err instanceof Error
@@ -676,26 +748,26 @@ export default function PaymentsPage() {
 
         <nav>
           <Link href="/dashboard">
-            📊 Dashboard
+            📊 {isArabic ? "لوحة التحكم" : "Dashboard"}
           </Link>
 
           <Link href="/boosters">
-            👥 Boosters
+            👥 {isArabic ? "البوسترز" : "Boosters"}
           </Link>
 
           <Link href="/orders">
-            📦 Orders
+            📦 {isArabic ? "الطلبات" : "Orders"}
           </Link>
 
           <Link
             href="/payments"
             className="active"
           >
-            💰 Payments
+            💰 {isArabic ? "المدفوعات" : "Payments"}
           </Link>
 
           <Link href="/settings">
-            ⚙️ Settings
+            ⚙️ {isArabic ? "الإعدادات" : "Settings"}
           </Link>
         </nav>
 
@@ -712,7 +784,7 @@ export default function PaymentsPage() {
               "/login";
           }}
         >
-          🚪 Logout
+          🚪 تسجيل الخروج
         </button>
       </aside>
 
@@ -723,7 +795,7 @@ export default function PaymentsPage() {
       <main className="content">
         <header>
           <div>
-            <h1>Payments</h1>
+            <h1>{isArabic ? "المدفوعات" : "Payments"}</h1>
 
             <p>
               Manage monthly booster
@@ -1123,6 +1195,16 @@ export default function PaymentsPage() {
                                     "pointer",
                                 }}
                               >
+                                <span className="admin-payment-booster-avatar">
+                                  {payment.profileImageUrl ? (
+                                    <img
+                                      src={payment.profileImageUrl}
+                                      alt=""
+                                    />
+                                  ) : (
+                                    payment.name.charAt(0).toUpperCase()
+                                  )}
+                                </span>
                                 <strong>
                                   {
                                     payment.name
@@ -2282,7 +2364,53 @@ export default function PaymentsPage() {
                 required
               />
             </label>
+<label className="login-form">
+  <span>
+    Payment Method
+  </span>
 
+  <select
+    value={payPaymentMethod}
+    onChange={(event) =>
+      setPayPaymentMethod(
+        event.target.value as
+          | PaymentMethod
+          | ""
+      )
+    }
+    required
+  >
+    <option value="">
+      Select payment method
+    </option>
+
+    <option value="VODAFONE_CASH">
+      Vodafone Cash
+    </option>
+
+    <option value="INSTAPAY">
+      InstaPay
+    </option>
+  </select>
+</label>
+
+<label className="login-form">
+  <span>
+    Payment Number
+  </span>
+
+  <input
+    type="text"
+    value={payPaymentNumber}
+    onChange={(event) =>
+      setPayPaymentNumber(
+        event.target.value
+      )
+    }
+    placeholder="010xxxxxxxx"
+    required
+  />
+</label>
             <label className="login-form">
               <span>
                 Exchange Rate (USD → EGP)

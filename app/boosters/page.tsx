@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLanguage } from "@/app/language-provider";
 
 type Booster = {
   id: string;
@@ -41,6 +42,7 @@ function formatMoney(value: unknown) {
 }
 
 export default function BoostersPage() {
+  const { isArabic } = useLanguage();
   const [boosters, setBoosters] = useState<Booster[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -667,26 +669,26 @@ export default function BoostersPage() {
 
         <nav>
           <Link href="/dashboard">
-            📊 Dashboard
+            📊 {isArabic ? "لوحة التحكم" : "Dashboard"}
           </Link>
 
           <Link
             href="/boosters"
             className="active"
           >
-            👥 Boosters
+            👥 {isArabic ? "البوسترز" : "Boosters"}
           </Link>
 
           <Link href="/orders">
-            📦 Orders
+            📦 {isArabic ? "الطلبات" : "Orders"}
           </Link>
 
           <Link href="/payments">
-            💰 Payments
+            💰 {isArabic ? "المدفوعات" : "Payments"}
           </Link>
 
           <Link href="/settings">
-            ⚙️ Settings
+            ⚙️ {isArabic ? "الإعدادات" : "Settings"}
           </Link>
         </nav>
 
@@ -704,7 +706,7 @@ export default function BoostersPage() {
               "/login";
           }}
         >
-          🚪 Logout
+          🚪 تسجيل الخروج
         </button>
       </aside>
 
@@ -715,7 +717,7 @@ export default function BoostersPage() {
       <main className="content">
         <header>
           <div>
-            <h1>Boosters</h1>
+            <h1>{isArabic ? "البوسترز" : "Boosters"}</h1>
 
             <p>
               Manage booster accounts,

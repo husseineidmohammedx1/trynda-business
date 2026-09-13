@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { LanguageProvider } from "./language-provider";
 
 export const metadata: Metadata = {
   title: {
@@ -7,7 +8,7 @@ export const metadata: Metadata = {
     template: "%s | Trynda Business",
   },
 
-  description: "Trynda Business Management System",
+  description: "نظام إدارة أعمال Trynda",
 
   icons: {
     icon: "/favicon.png",
@@ -27,7 +28,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="ar" dir="rtl" suppressHydrationWarning>
       <body className="trynda-app">
         <div className="trynda-background">
           <div className="trynda-glow trynda-glow-1" />
@@ -35,7 +36,9 @@ export default function RootLayout({
           <div className="trynda-grid" />
         </div>
 
-        <main className="trynda-root">{children}</main>
+        <LanguageProvider>
+          <main className="trynda-root">{children}</main>
+        </LanguageProvider>
       </body>
     </html>
   );

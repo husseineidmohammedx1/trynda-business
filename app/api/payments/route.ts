@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { verifySession } from "@/lib/auth";
 import { notifyBooster } from "@/lib/notifications";
 
+type PaymentMethodValue = "VODAFONE_CASH" | "INSTAPAY";
+
 async function requireAdmin(request: NextRequest) {
   const token = request.cookies.get("session")?.value;
 
@@ -70,6 +72,36 @@ function getMonthRange(month: string) {
   };
 }
 
+function normalizePaymentMethod(
+  value: unknown
+): PaymentMethodValue | null {
+  const method = String(value || "")
+    .trim()
+    .toUpperCase();
+
+  if (method === "VODAFONE_CASH") {
+    return "VODAFONE_CASH";
+  }
+
+  if (method === "INSTAPAY") {
+    return "INSTAPAY";
+  }
+
+  return null;
+}
+
+function formatPaymentMethod(
+  value: PaymentMethodValue
+) {
+  return value === "VODAFONE_CASH"
+    ? "Vodafone Cash"
+    : "InstaPay";
+}
+
+function round2(value: number) {
+  return Number(value.toFixed(2));
+}
+
 async function refreshAvailablePayments() {
   await prisma.payment.updateMany({
     where: {
@@ -88,6 +120,80 @@ async function refreshAvailablePayments() {
   });
 }
 
+async function sendTelegramPaymentNotification({
+  boosterName,
+  amountUsd,
+  exchangeRate,
+  amountEgp,
+  paymentMethod,
+  paymentNumber,
+}: {
+  boosterName: string;
+  amountUsd: number;
+  exchangeRate: number;
+  amountEgp: number;
+  paymentMethod: PaymentMethodValue;
+  paymentNumber: string;
+}) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+
+  if (!token) {
+    console.warn(
+      "TELEGRAM_BOT_TOKEN is not configured."
+    );
+
+    return;
+  }
+
+  const message = [
+    "💰 Booster Payment",
+    "",
+    `Booster: ${boosterName}`,
+    "",
+    `USD Withdrawn: $${amountUsd.toFixed(2)}`,
+    `Exchange Rate: ${exchangeRate.toFixed(4)} EGP`,
+    "",
+    `Paid in EGP: ${amountEgp.toFixed(2)} EGP`,
+    "",
+    `Payment Method: ${formatPaymentMethod(
+      paymentMethod
+    )}`,
+    `Payment Number: ${paymentNumber}`,
+    "",
+    "Status: PAID ✅",
+  ].join("\n");
+
+  try {
+    const response = await fetch(
+      `https://api.telegram.org/bot${token}/sendMessage`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          chat_id: process.env.TELEGRAM_PAYMENT_CHAT_ID,
+          text: message,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const text = await response.text();
+
+      console.error(
+        "Telegram payment notification failed:",
+        text
+      );
+    }
+  } catch (error) {
+    console.error(
+      "Telegram payment notification error:",
+      error
+    );
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     if (!(await requireAdmin(request))) {
@@ -99,9 +205,13 @@ export async function GET(request: NextRequest) {
 
     const settings = await getSettings();
 
-    const { searchParams } = new URL(request.url);
+    const { searchParams } = new URL(
+      request.url
+    );
+
     const month =
-      searchParams.get("month") || getCurrentMonth();
+      searchParams.get("month") ||
+      getCurrentMonth();
 
     let range;
 
@@ -130,12 +240,17 @@ export async function GET(request: NextRequest) {
         where: {
           role: "BOOSTER",
         },
+
         select: {
           id: true,
           name: true,
           email: true,
           active: true,
+          profileImageUrl: true,
+          paymentMethod: true,
+          paymentNumber: true,
         },
+
         orderBy: {
           name: "asc",
         },
@@ -187,6 +302,7 @@ export async function GET(request: NextRequest) {
 
           payment: {
             select: {
+              id: true,
               orderPriceUsd: true,
               platformFeeUsd: true,
               extraPenaltyUsd: true,
@@ -223,6 +339,7 @@ export async function GET(request: NextRequest) {
           userId: {
             not: null,
           },
+
           remainingUsd: {
             gt: 0,
           },
@@ -271,9 +388,20 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
-    const orderMap = new Map<string, typeof orders>();
-    const fineMap = new Map<string, typeof fines>();
-    const paymentMap = new Map<string, typeof payments>();
+    const orderMap = new Map<
+      string,
+      typeof orders
+    >();
+
+    const fineMap = new Map<
+      string,
+      typeof fines
+    >();
+
+    const paymentMap = new Map<
+      string,
+      typeof payments
+    >();
 
     for (const order of orders) {
       if (!order.boosterId) continue;
@@ -307,7 +435,8 @@ export async function GET(request: NextRequest) {
       if (!payment.boosterId) continue;
 
       const list =
-        paymentMap.get(payment.boosterId) || [];
+        paymentMap.get(payment.boosterId) ||
+        [];
 
       list.push(payment);
 
@@ -345,7 +474,8 @@ export async function GET(request: NextRequest) {
           (sum, order) =>
             sum +
             Number(
-              order.payment?.platformFeeUsd ??
+              order.payment
+                ?.platformFeeUsd ??
                 order.platformFeeUsd ??
                 0
             ),
@@ -357,7 +487,8 @@ export async function GET(request: NextRequest) {
           (sum, order) =>
             sum +
             Number(
-              order.payment?.extraPenaltyUsd ??
+              order.payment
+                ?.extraPenaltyUsd ??
                 order.extraPenaltyUsd ??
                 0
             ),
@@ -369,7 +500,8 @@ export async function GET(request: NextRequest) {
           (sum, order) =>
             sum +
             Number(
-              order.payment?.boosterAmountUsd ??
+              order.payment
+                ?.boosterAmountUsd ??
                 order.boosterAmountUsd ??
                 0
             ),
@@ -386,14 +518,16 @@ export async function GET(request: NextRequest) {
       const finedUsd =
         monthFines.reduce(
           (sum, fine) =>
-            sum + Number(fine.amountUsd),
+            sum +
+            Number(fine.amountUsd),
           0
         );
 
       const outstandingFines =
         boosterFines.reduce(
           (sum, fine) =>
-            sum + Number(fine.remainingUsd),
+            sum +
+            Number(fine.remainingUsd),
           0
         );
 
@@ -408,7 +542,9 @@ export async function GET(request: NextRequest) {
           (payment) =>
             payment.status === "PENDING" &&
             payment.releaseAt &&
-            new Date(payment.releaseAt) > now
+            new Date(
+              payment.releaseAt
+            ) > now
         );
 
       const availableUsd =
@@ -418,7 +554,9 @@ export async function GET(request: NextRequest) {
             Math.max(
               0,
               Number(payment.netAmountUsd) -
-                Number(payment.paidAmountUsd ?? 0)
+                Number(
+                  payment.paidAmountUsd ?? 0
+                )
             ),
           0
         );
@@ -430,7 +568,9 @@ export async function GET(request: NextRequest) {
             Math.max(
               0,
               Number(payment.netAmountUsd) -
-                Number(payment.paidAmountUsd ?? 0)
+                Number(
+                  payment.paidAmountUsd ?? 0
+                )
             ),
           0
         );
@@ -439,7 +579,9 @@ export async function GET(request: NextRequest) {
         boosterPayments
           .filter(
             (payment) =>
-              Number(payment.paidAmountUsd ?? 0) > 0 &&
+              Number(
+                payment.paidAmountUsd ?? 0
+              ) > 0 &&
               payment.paidAt &&
               new Date(payment.paidAt) >=
                 range.start &&
@@ -462,13 +604,14 @@ export async function GET(request: NextRequest) {
         ).toFixed(2)
       );
 
-      const expectedPayableUsd = Number(
-        (
-          availableUsd +
-          onHoldUsd -
-          outstandingFines
-        ).toFixed(2)
-      );
+      const expectedPayableUsd =
+        Number(
+          (
+            availableUsd +
+            onHoldUsd -
+            outstandingFines
+          ).toFixed(2)
+        );
 
       const totalEarnedAfterFeesAndFines =
         Number(
@@ -487,7 +630,8 @@ export async function GET(request: NextRequest) {
         balanceUsd > 0 &&
         onHoldUsd > 0
       ) {
-        status = "AVAILABLE + ON HOLD";
+        status =
+          "AVAILABLE + ON HOLD";
       } else if (balanceUsd > 0) {
         status = "AVAILABLE";
       } else if (onHoldUsd > 0) {
@@ -506,21 +650,24 @@ export async function GET(request: NextRequest) {
 
           platformFeeUsd:
             Number(
-              order.payment?.platformFeeUsd ??
+              order.payment
+                ?.platformFeeUsd ??
                 order.platformFeeUsd ??
                 0
             ),
 
           extraPenaltyUsd:
             Number(
-              order.payment?.extraPenaltyUsd ??
+              order.payment
+                ?.extraPenaltyUsd ??
                 order.extraPenaltyUsd ??
                 0
             ),
 
           boosterAmountUsd:
             Number(
-              order.payment?.boosterAmountUsd ??
+              order.payment
+                ?.boosterAmountUsd ??
                 order.boosterAmountUsd ??
                 0
             ),
@@ -528,36 +675,39 @@ export async function GET(request: NextRequest) {
           finedUsd:
             Number(
               order.payment?.finedUsd ??
-                order.deductionUsd ??
-                0
+              order.deductionUsd ??
+              0
             ),
 
           netAmountUsd:
             Number(
-              order.payment?.netAmountUsd ??
+              order.payment
+                ?.netAmountUsd ??
                 0
             ),
 
           exchangeRate:
             Number(
               order.payment?.exchangeRate ??
-                order.exchangeRate
+              order.exchangeRate
             ),
 
           amountEgp:
             Number(
               order.payment?.amountEgp ??
-                0
+              0
             ),
 
           paidAmountUsd:
             Number(
-              order.payment?.paidAmountUsd ??
-                0
+              order.payment
+                ?.paidAmountUsd ??
+              0
             ),
 
           paidExchangeRate:
-            order.payment?.paidExchangeRate
+            order.payment
+              ?.paidExchangeRate != null
               ? Number(
                   order.payment
                     .paidExchangeRate
@@ -565,7 +715,8 @@ export async function GET(request: NextRequest) {
               : null,
 
           paidAmountEgp:
-            order.payment?.paidAmountEgp
+            order.payment
+              ?.paidAmountEgp != null
               ? Number(
                   order.payment
                     .paidAmountEgp
@@ -583,11 +734,13 @@ export async function GET(request: NextRequest) {
             order.createdAt,
 
           completedAt:
-            order.payment?.completedAt ??
+            order.payment
+              ?.completedAt ??
             order.completedAt,
 
           releaseAt:
-            order.payment?.releaseAt ??
+            order.payment
+              ?.releaseAt ??
             null,
 
           paidAt:
@@ -597,13 +750,13 @@ export async function GET(request: NextRequest) {
           platformFeePercent:
             Number(
               order.platformFeePercent ??
-                settings.platformFeePercent
+              settings.platformFeePercent
             ),
 
           extraPenaltyPercent:
             Number(
               order.extraPenaltyPercent ??
-                0
+              0
             ),
         }));
 
@@ -612,6 +765,13 @@ export async function GET(request: NextRequest) {
         name: booster.name,
         email: booster.email,
         active: booster.active,
+        profileImageUrl:
+          booster.profileImageUrl,
+
+        paymentMethod:
+          booster.paymentMethod,
+        paymentNumber:
+          booster.paymentNumber,
 
         orders:
           boosterOrders.length,
@@ -760,84 +920,194 @@ export async function PATCH(
     if (action === "undoLastPayment") {
       if (!boosterId) {
         return NextResponse.json(
-          { error: "Booster ID is required" },
-          { status: 400 }
+          {
+            error:
+              "Booster ID is required",
+          },
+          {
+            status: 400,
+          }
         );
       }
 
-      const lastPayment =
-        await prisma.payment.findFirst({
-          where: {
-            boosterId,
-            paidAmountUsd: { gt: 0 },
-            paidAt: { not: null },
-          },
-          orderBy: { paidAt: "desc" },
-          select: { paidAt: true },
-        });
+      const lastTransaction =
+        await prisma.boosterPaymentTransaction.findFirst(
+          {
+            where: {
+              boosterId,
+            },
 
-      if (!lastPayment?.paidAt) {
+            orderBy: {
+              paidAt: "desc",
+            },
+
+            include: {
+              allocations: {
+                select: {
+                  paymentId: true,
+                  amountUsd: true,
+                },
+              },
+            },
+          }
+        );
+
+      if (!lastTransaction) {
         return NextResponse.json(
-          { error: "No payment to undo" },
-          { status: 400 }
+          {
+            error:
+              "No payment to undo",
+          },
+          {
+            status: 400,
+          }
         );
       }
 
-      const paidPayments =
-        await prisma.payment.findMany({
-          where: {
-            boosterId,
-            paidAt: lastPayment.paidAt,
-            paidAmountUsd: { gt: 0 },
-          },
-          select: {
-            id: true,
-            paidAmountUsd: true,
-            paidAmountEgp: true,
-            completedAt: true,
-            releaseAt: true,
-          },
-        });
+      const reversedUsd =
+        round2(
+          Number(
+            lastTransaction.amountUsd
+          )
+        );
 
-      const reversedUsd = paidPayments.reduce(
-        (sum, payment) =>
-          sum + Number(payment.paidAmountUsd ?? 0),
-        0
-      );
+      await prisma.$transaction(
+        async (tx) => {
+          for (const allocation of
+            lastTransaction.allocations) {
+            const payment =
+              await tx.payment.findUnique({
+                where: {
+                  id: allocation.paymentId,
+                },
+              });
 
-      await prisma.$transaction(async (tx) => {
-        for (const payment of paidPayments) {
-          const shouldBeAvailable =
-            payment.completedAt &&
-            payment.releaseAt &&
-            payment.releaseAt <= new Date();
+            if (!payment) {
+              continue;
+            }
 
-          await tx.payment.update({
-            where: { id: payment.id },
+            const currentPaidUsd =
+              Number(
+                payment.paidAmountUsd ?? 0
+              );
+
+            const currentPaidEgp =
+              Number(
+                payment.paidAmountEgp ?? 0
+              );
+
+            const undoUsd =
+              Number(
+                allocation.amountUsd
+              );
+
+            const newPaidUsd =
+              round2(
+                Math.max(
+                  0,
+                  currentPaidUsd -
+                    undoUsd
+                )
+              );
+
+            const transactionPaidEgp =
+              round2(
+                undoUsd *
+                  Number(
+                    lastTransaction.exchangeRate
+                  )
+              );
+
+            const newPaidEgp =
+              round2(
+                Math.max(
+                  0,
+                  currentPaidEgp -
+                    transactionPaidEgp
+                )
+              );
+
+            const shouldBeAvailable =
+              payment.completedAt &&
+              payment.releaseAt &&
+              payment.releaseAt <=
+                new Date();
+
+            await tx.payment.update({
+              where: {
+                id: payment.id,
+              },
+
+              data: {
+                status:
+                  newPaidUsd >=
+                  Number(
+                    payment.netAmountUsd
+                  )
+                    ? "PAID"
+                    : shouldBeAvailable
+                    ? "AVAILABLE"
+                    : "PENDING",
+
+                paidAmountUsd:
+                  newPaidUsd > 0
+                    ? newPaidUsd
+                    : null,
+
+                paidAmountEgp:
+                  newPaidEgp > 0
+                    ? newPaidEgp
+                    : null,
+
+                paidExchangeRate:
+                  newPaidUsd > 0
+                    ? lastTransaction.exchangeRate
+                    : null,
+
+                paidAt:
+                  newPaidUsd > 0
+                    ? lastTransaction.paidAt
+                    : null,
+              },
+            });
+          }
+
+          await tx.paymentTransactionAllocation.deleteMany(
+            {
+              where: {
+                transactionId:
+                  lastTransaction.id,
+              },
+            }
+          );
+
+          await tx.boosterPaymentTransaction.delete(
+            {
+              where: {
+                id: lastTransaction.id,
+              },
+            }
+          );
+
+          await tx.user.update({
+            where: {
+              id: boosterId,
+            },
+
             data: {
-              status: shouldBeAvailable
-                ? "AVAILABLE"
-                : "PENDING",
-              paidAmountUsd: null,
-              paidAmountEgp: null,
-              paidExchangeRate: null,
-              paidAt: null,
+              totalPaidUsd: {
+                decrement:
+                  reversedUsd,
+              },
+
+              balanceUsd: {
+                increment:
+                  reversedUsd,
+              },
             },
           });
         }
-
-        await tx.user.update({
-          where: { id: boosterId },
-          data: {
-            totalPaidUsd: {
-              decrement: reversedUsd,
-            },
-            balanceUsd: {
-              increment: reversedUsd,
-            },
-          },
-        });
-      });
+      );
 
       return NextResponse.json({
         success: true,
@@ -845,8 +1115,18 @@ export async function PATCH(
       });
     }
 
-    const exchangeRate =
-      Number(body.exchangeRate);
+    const exchangeRate = Number(
+      body.exchangeRate
+    );
+
+    const paymentMethod =
+      normalizePaymentMethod(
+        body.paymentMethod
+      );
+
+    const paymentNumber = String(
+      body.paymentNumber || ""
+    ).trim();
 
     if (!boosterId) {
       return NextResponse.json(
@@ -875,10 +1155,35 @@ export async function PATCH(
       );
     }
 
+    if (!paymentMethod) {
+      return NextResponse.json(
+        {
+          error:
+            "Payment method is required",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (!paymentNumber) {
+      return NextResponse.json(
+        {
+          error:
+            "Payment number is required",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
     let range;
 
     try {
-      range = getMonthRange(month);
+      range =
+        getMonthRange(month);
     } catch {
       return NextResponse.json(
         {
@@ -893,12 +1198,31 @@ export async function PATCH(
 
     await refreshAvailablePayments();
 
-    const payablePayments =
-      await prisma.payment.findMany({
+    const [
+      booster,
+      payablePayments,
+    ] = await Promise.all([
+      prisma.user.findUnique({
+        where: {
+          id: boosterId,
+        },
+
+        select: {
+          id: true,
+          name: true,
+          role: true,
+        },
+      }),
+
+      prisma.payment.findMany({
         where: {
           boosterId,
+
           status: {
-            in: ["PENDING", "AVAILABLE"],
+            in: [
+              "PENDING",
+              "AVAILABLE",
+            ],
           },
 
           order: {
@@ -922,7 +1246,20 @@ export async function PATCH(
         orderBy: {
           createdAt: "asc",
         },
-      });
+      }),
+    ]);
+
+    if (!booster || booster.role !== "BOOSTER") {
+      return NextResponse.json(
+        {
+          error:
+            "Booster not found",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
 
     if (!payablePayments.length) {
       return NextResponse.json(
@@ -937,25 +1274,29 @@ export async function PATCH(
     }
 
     const totalAvailable =
-      Number(
-        payablePayments
-          .reduce(
-            (sum, payment) =>
-              sum +
-              Math.max(
-                0,
-                Number(payment.netAmountUsd) -
-                  Number(payment.paidAmountUsd ?? 0)
-              ),
-            0
-          )
-          .toFixed(2)
+      round2(
+        payablePayments.reduce(
+          (sum, payment) =>
+            sum +
+            Math.max(
+              0,
+              Number(
+                payment.netAmountUsd
+              ) -
+                Number(
+                  payment.paidAmountUsd ??
+                    0
+                )
+            ),
+          0
+        )
       );
 
     const fines =
       await prisma.deduction.findMany({
         where: {
           userId: boosterId,
+
           remainingUsd: {
             gt: 0,
           },
@@ -972,25 +1313,25 @@ export async function PATCH(
       });
 
     const totalFines =
-      Number(
-        fines
-          .reduce(
-            (sum, fine) =>
-              sum +
-              Number(
-                fine.remainingUsd
-              ),
-            0
-          )
-          .toFixed(2)
+      round2(
+        fines.reduce(
+          (sum, fine) =>
+            sum +
+            Number(
+              fine.remainingUsd
+            ),
+          0
+        )
       );
 
-    const maximumPayableUsd = Number(
-      Math.max(
-        0,
-        totalAvailable - totalFines
-      ).toFixed(2)
-    );
+    const maximumPayableUsd =
+      round2(
+        Math.max(
+          0,
+          totalAvailable -
+            totalFines
+        )
+      );
 
     const requestedAmount =
       body.amountUsd === undefined
@@ -998,21 +1339,29 @@ export async function PATCH(
         : Number(body.amountUsd);
 
     if (
-      !Number.isFinite(requestedAmount) ||
+      !Number.isFinite(
+        requestedAmount
+      ) ||
       requestedAmount <= 0
     ) {
       return NextResponse.json(
-        { error: "Invalid payment amount" },
-        { status: 400 }
+        {
+          error:
+            "Invalid payment amount",
+        },
+        {
+          status: 400,
+        }
       );
     }
 
-    const payableUsd = Number(
-      Math.min(
-        requestedAmount,
-        maximumPayableUsd
-      ).toFixed(2)
-    );
+    const payableUsd =
+      round2(
+        Math.min(
+          requestedAmount,
+          maximumPayableUsd
+        )
+      );
 
     if (payableUsd <= 0) {
       return NextResponse.json(
@@ -1021,16 +1370,19 @@ export async function PATCH(
             "No payable balance after fines",
         },
         {
-          status: 400
+          status: 400,
         }
       );
     }
 
-    const fineUsed = Math.min(
-      totalFines,
-      Math.max(
-        0,
-        totalAvailable - payableUsd
+    const fineUsed = round2(
+      Math.min(
+        totalFines,
+        Math.max(
+          0,
+          totalAvailable -
+            payableUsd
+        )
       )
     );
 
@@ -1038,67 +1390,143 @@ export async function PATCH(
       id: string;
       paidUsd: number;
       remainingUsd: number;
-      status: "PENDING" | "AVAILABLE";
+      status:
+        | "PENDING"
+        | "AVAILABLE";
       existingPaidUsd: number;
       existingPaidEgp: number;
     }[] = [];
 
-    let remainingToPay =
-      Number(
-        (payableUsd + fineUsed).toFixed(2)
+    let remainingToAllocate =
+      round2(
+        payableUsd +
+          fineUsed
       );
 
-    for (const payment of payablePayments) {
-      if (remainingToPay <= 0) {
+    for (const payment of
+      payablePayments) {
+      if (remainingToAllocate <= 0) {
         break;
       }
 
       const amount =
         Math.max(
           0,
-          Number(payment.netAmountUsd) -
-            Number(payment.paidAmountUsd ?? 0)
+          Number(
+            payment.netAmountUsd
+          ) -
+            Number(
+              payment.paidAmountUsd ??
+                0
+            )
         );
 
       const paidUsd =
         Math.min(
           amount,
-          remainingToPay
+          remainingToAllocate
         );
+
+      if (paidUsd <= 0) {
+        continue;
+      }
 
       paymentUpdates.push({
         id: payment.id,
+
         paidUsd:
-          Number(
-            paidUsd.toFixed(2)
-          ),
-        remainingUsd: amount,
+          round2(paidUsd),
+
+        remainingUsd:
+          round2(amount),
+
         status:
-          payment.status === "AVAILABLE"
+          payment.status ===
+          "AVAILABLE"
             ? "AVAILABLE"
             : "PENDING",
-        existingPaidUsd: Number(
-          payment.paidAmountUsd ?? 0
-        ),
-        existingPaidEgp: Number(
-          payment.paidAmountEgp ?? 0
-        ),
+
+        existingPaidUsd:
+          Number(
+            payment.paidAmountUsd ??
+              0
+          ),
+
+        existingPaidEgp:
+          Number(
+            payment.paidAmountEgp ??
+              0
+          ),
       });
 
-      remainingToPay =
-        Number(
-          (
-            remainingToPay -
+      remainingToAllocate =
+        round2(
+          remainingToAllocate -
             paidUsd
-          ).toFixed(2)
         );
+    }
+
+    if (remainingToAllocate > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Unable to allocate the full payment amount",
+        },
+        {
+          status: 400,
+        }
+      );
     }
 
     const paidAt = new Date();
 
+    const paidEgp = round2(
+      payableUsd *
+        exchangeRate
+    );
+
     await prisma.$transaction(
       async (tx) => {
-        for (const payment of paymentUpdates) {
+        const transaction =
+          await tx.boosterPaymentTransaction.create(
+            {
+              data: {
+                boosterId,
+
+                month,
+
+                amountUsd:
+                  payableUsd,
+
+                exchangeRate,
+
+                amountEgp:
+                  paidEgp,
+
+                paymentMethod,
+
+                paymentNumber,
+
+                paidAt,
+              },
+            }
+          );
+
+        for (const payment of
+          paymentUpdates) {
+          const newPaidUsd =
+            round2(
+              payment.existingPaidUsd +
+                payment.paidUsd
+            );
+
+          const newPaidEgp =
+            round2(
+              payment.existingPaidEgp +
+                payment.paidUsd *
+                  exchangeRate
+            );
+
           await tx.payment.update({
             where: {
               id: payment.id,
@@ -1106,41 +1534,48 @@ export async function PATCH(
 
             data: {
               status:
-                payment.paidUsd >=
-                payment.remainingUsd
+                newPaidUsd >=
+                payment.remainingUsd +
+                  payment.existingPaidUsd
                   ? "PAID"
                   : payment.status,
 
               paidAmountUsd:
-                Number(
-                  (
-                    payment.existingPaidUsd +
-                    payment.paidUsd
-                  ).toFixed(2)
-                ),
+                newPaidUsd,
 
               paidExchangeRate:
                 exchangeRate,
 
               paidAmountEgp:
-                Number(
-                  (
-                    payment.existingPaidEgp +
-                    payment.paidUsd *
-                      exchangeRate
-                  ).toFixed(2)
-                ),
+                newPaidEgp,
 
               paidAt,
             },
           });
+
+          await tx.paymentTransactionAllocation.create(
+            {
+              data: {
+                transactionId:
+                  transaction.id,
+
+                paymentId:
+                  payment.id,
+
+                amountUsd:
+                  payment.paidUsd,
+              },
+            }
+          );
         }
 
         let remainingFine =
           fineUsed;
 
         for (const fine of fines) {
-          if (remainingFine <= 0) {
+          if (
+            remainingFine <= 0
+          ) {
             break;
           }
 
@@ -1162,21 +1597,15 @@ export async function PATCH(
 
             data: {
               remainingUsd:
-                Number(
-                  (
-                    current -
-                    used
-                  ).toFixed(2)
+                round2(
+                  current - used
                 ),
             },
           });
 
           remainingFine =
-            Number(
-              (
-                remainingFine -
-                used
-              ).toFixed(2)
+            round2(
+              remainingFine - used
             );
         }
 
@@ -1200,24 +1629,60 @@ export async function PATCH(
       }
     );
 
-    await notifyBooster({
-      boosterId,
-      type: "PAYMENT_SENT",
-      title: "Payment sent",
-      message: `A payment of $${payableUsd.toFixed(2)} was sent to you.`,
-    });
+    try {
+      await notifyBooster({
+        boosterId,
 
-    const paidEgp =
-      Number(
-        (
-          payableUsd *
-          exchangeRate
-        ).toFixed(2)
+        type: "PAYMENT_SENT",
+
+        title:
+          "Payment sent",
+
+        message: [
+          `A payment of $${payableUsd.toFixed(
+            2
+          )} was sent to you.`,
+          `Exchange rate: ${exchangeRate.toFixed(
+            4
+          )} EGP`,
+          `Paid in EGP: ${paidEgp.toFixed(
+            2
+          )} EGP`,
+          `Payment method: ${formatPaymentMethod(
+            paymentMethod
+          )}`,
+          `Payment number: ${paymentNumber}`,
+        ].join("\n"),
+      });
+    } catch (error) {
+      console.error(
+        "Booster notification error:",
+        error
       );
+    }
+
+    await sendTelegramPaymentNotification({
+      boosterName:
+        booster.name,
+
+      amountUsd:
+        payableUsd,
+
+      exchangeRate,
+
+      amountEgp:
+        paidEgp,
+
+      paymentMethod,
+
+      paymentNumber,
+    });
 
     return NextResponse.json({
       success: true,
+
       boosterId,
+
       month,
 
       availableUsd:
@@ -1234,6 +1699,10 @@ export async function PATCH(
       paidEgp,
 
       exchangeRate,
+
+      paymentMethod,
+
+      paymentNumber,
 
       paymentsCount:
         paymentUpdates.length,

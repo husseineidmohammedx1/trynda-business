@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLanguage } from "@/app/language-provider";
 
 type SettingsResponse = {
   id: string;
@@ -14,6 +15,7 @@ type SettingsResponse = {
 };
 
 export default function SettingsPage() {
+  const { isArabic } = useLanguage();
   const [businessName, setBusinessName] =
     useState("Trynda Business");
 
@@ -239,26 +241,26 @@ export default function SettingsPage() {
 
         <nav>
           <Link href="/dashboard">
-            📊 Dashboard
+            📊 {isArabic ? "لوحة التحكم" : "Dashboard"}
           </Link>
 
           <Link href="/boosters">
-            👥 Boosters
+            👥 {isArabic ? "البوسترز" : "Boosters"}
           </Link>
 
           <Link href="/orders">
-            📦 Orders
+            📦 {isArabic ? "الطلبات" : "Orders"}
           </Link>
 
           <Link href="/payments">
-            💰 Payments
+            💰 {isArabic ? "المدفوعات" : "Payments"}
           </Link>
 
           <Link
             href="/settings"
             className="active"
           >
-            ⚙️ Settings
+            ⚙️ {isArabic ? "الإعدادات" : "Settings"}
           </Link>
         </nav>
 
@@ -276,7 +278,7 @@ export default function SettingsPage() {
               "/login";
           }}
         >
-          🚪 Logout
+          🚪 تسجيل الخروج
         </button>
       </aside>
 
@@ -288,7 +290,7 @@ export default function SettingsPage() {
         <header>
           <div>
             <h1>
-              Settings
+              {isArabic ? "الإعدادات" : "Settings"}
             </h1>
 
             <p>
@@ -410,7 +412,7 @@ export default function SettingsPage() {
         </section>
 
         {/* =================================================
-            PAYMENT SETTINGS
+            إعدادات الدفع
         ================================================= */}
 
         <section

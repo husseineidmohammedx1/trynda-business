@@ -2,11 +2,13 @@
 import React from "react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLanguage } from "@/app/language-provider";
 
 type Booster = {
   id: string;
   name: string;
   email: string;
+  profileImageUrl?: string | null;
   platformFeePercent: number;
   extraPenaltyPercent: number;
 };
@@ -112,6 +114,7 @@ function getStatusStyle(status: string) {
 }
 
 export default function OrdersPage() {
+  const { isArabic } = useLanguage();
   const [orders, setOrders] = useState<Order[]>([]);
   const [boosters, setBoosters] = useState<Booster[]>([]);
   const [orderSearch, setOrderSearch] =
@@ -844,26 +847,26 @@ export default function OrdersPage() {
 
         <nav>
           <Link href="/dashboard">
-            📊 Dashboard
+            📊 {isArabic ? "لوحة التحكم" : "Dashboard"}
           </Link>
 
           <Link href="/boosters">
-            👥 Boosters
+            👥 {isArabic ? "البوسترز" : "Boosters"}
           </Link>
 
           <Link
             href="/orders"
             className="active"
           >
-            📦 Orders
+            📦 {isArabic ? "الطلبات" : "Orders"}
           </Link>
 
           <Link href="/payments">
-            💰 Payments
+            💰 {isArabic ? "المدفوعات" : "Payments"}
           </Link>
 
           <Link href="/settings">
-            ⚙️ Settings
+            ⚙️ {isArabic ? "الإعدادات" : "Settings"}
           </Link>
         </nav>
 
@@ -881,7 +884,7 @@ export default function OrdersPage() {
               "/login";
           }}
         >
-          🚪 Logout
+          🚪 تسجيل الخروج
         </button>
       </aside>
 
@@ -890,7 +893,7 @@ export default function OrdersPage() {
       <main className="content">
         <header>
           <div>
-            <h1>Orders</h1>
+            <h1>{isArabic ? "الطلبات" : "Orders"}</h1>
 
             <p>
               Manage orders, customer
@@ -1449,7 +1452,21 @@ export default function OrdersPage() {
                               }}
                             >
                               {order.booster ? (
-                                <div>
+                                <div className="admin-order-booster-identity">
+                                  <span className="admin-order-booster-avatar">
+                                    {order.booster.profileImageUrl ? (
+                                      <img
+                                        src={order.booster.profileImageUrl}
+                                        alt=""
+                                      />
+                                    ) : (
+                                      order.booster.name
+                                        .charAt(0)
+                                        .toUpperCase()
+                                    )}
+                                  </span>
+
+                                  <div>
                                   <strong>
                                     {
                                       order
@@ -1475,6 +1492,7 @@ export default function OrdersPage() {
                                         .email
                                     }
                                   </span>
+                                  </div>
                                 </div>
                               ) : (
                                 <span className="muted">
@@ -2922,9 +2940,16 @@ export default function OrdersPage() {
                         }}
                       >
                         <span className="booster-option-avatar">
-                          {booster.name
-                            .charAt(0)
-                            .toUpperCase()}
+                          {booster.profileImageUrl ? (
+                            <img
+                              src={booster.profileImageUrl}
+                              alt=""
+                            />
+                          ) : (
+                            booster.name
+                              .charAt(0)
+                              .toUpperCase()
+                          )}
                         </span>
 
                         <span className="booster-option-text">

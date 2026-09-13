@@ -3,6 +3,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useLanguage } from "@/app/language-provider";
 
 type Stats = {
   totalRevenue: number;
@@ -17,6 +18,7 @@ type Booster = {
   id: string;
   name: string;
   email: string;
+  profileImageUrl?: string | null;
 };
 
 type RecentOrder = {
@@ -233,8 +235,21 @@ function RecentOrderRow({ order }: { order: RecentOrder }) {
       <td data-label="Booster">
         {order.booster ? (
           <div className="dashboard-booster-cell">
-            <div className="dashboard-booster-avatar">
-              {order.booster.name.charAt(0).toUpperCase()}
+            <div
+              className={
+                order.booster.profileImageUrl
+                  ? "dashboard-booster-avatar has-image"
+                  : "dashboard-booster-avatar"
+              }
+            >
+              {order.booster.profileImageUrl ? (
+                <img
+                  src={order.booster.profileImageUrl}
+                  alt=""
+                />
+              ) : (
+                order.booster.name.charAt(0).toUpperCase()
+              )}
             </div>
 
             <div>
@@ -293,6 +308,7 @@ function RecentOrderRow({ order }: { order: RecentOrder }) {
 }
 
 export default function DashboardPage() {
+  const { isArabic } = useLanguage();
   const router = useRouter();
 
   const [loggingOut, setLoggingOut] = useState(false);
@@ -489,7 +505,7 @@ export default function DashboardPage() {
         </Link>
 
         <div className="dashboard-nav-label">
-          MAIN MENU
+          القائمة الرئيسية
         </div>
 
         <nav className="dashboard-nav">
@@ -507,7 +523,17 @@ export default function DashboardPage() {
                 {item.icon}
               </span>
 
-              <span>{item.label}</span>
+              <span>
+                {isArabic
+                  ? {
+                      Dashboard: "لوحة التحكم",
+                      Boosters: "البوسترز",
+                      Orders: "الطلبات",
+                      Payments: "المدفوعات",
+                      Settings: "الإعدادات",
+                    }[item.label]
+                  : item.label}
+              </span>
 
               {item.href === "/dashboard" && (
                 <span className="dashboard-nav-active-dot" />
@@ -523,7 +549,7 @@ export default function DashboardPage() {
 
           <div>
             <strong>System online</strong>
-            <span>All services operational</span>
+            <span>كل الخدمات تعمل</span>
           </div>
         </div>
 
@@ -533,7 +559,7 @@ export default function DashboardPage() {
           className="dashboard-logout"
         >
           <span>↪</span>
-          {loggingOut ? "Logging out..." : "Logout"}
+          {loggingOut ? "جار تسجيل الخروج..." : "تسجيل الخروج"}
         </button>
       </aside>
 
@@ -545,10 +571,10 @@ export default function DashboardPage() {
               BUSINESS OVERVIEW
             </div>
 
-            <h1>Dashboard</h1>
+            <h1>{isArabic ? "لوحة التحكم" : "Dashboard"}</h1>
 
             <p>
-              Monitor your business performance and activity.
+              تابع أداء ونشاط عملك.
             </p>
           </div>
 
@@ -575,8 +601,8 @@ export default function DashboardPage() {
         <section className="dashboard-overview">
           <div className="dashboard-overview-heading">
             <div>
-              <span>OVERVIEW</span>
-              <h2>Business performance</h2>
+              <span>{isArabic ? "نظرة عامة" : "OVERVIEW"}</span>
+              <h2>{isArabic ? "أداء العمل" : "Business performance"}</h2>
             </div>
 
             <div className="dashboard-overview-line" />
@@ -660,7 +686,7 @@ export default function DashboardPage() {
                 href="/orders"
                 className="view-all dashboard-view-all"
               >
-                <span>View all orders</span>
+                <span>عرض كل الطلبات</span>
                 <strong>→</strong>
               </Link>
             }
@@ -669,7 +695,7 @@ export default function DashboardPage() {
           {loading ? (
             <div className="empty dashboard-empty">
               <div className="dashboard-loading-ring" />
-              <h3>Loading orders</h3>
+              <h3>{isArabic ? "جار تحميل الطلبات" : "Loading orders"}</h3>
               <p>
                 Fetching the latest business activity...
               </p>
@@ -680,7 +706,7 @@ export default function DashboardPage() {
                 ▣
               </div>
 
-              <h3>No orders yet</h3>
+              <h3>{isArabic ? "لا توجد طلبات بعد" : "No orders yet"}</h3>
 
               <p>
                 Create your first order to get started.

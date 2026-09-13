@@ -33,6 +33,23 @@ function serializeObject<T extends Record<string, unknown>>(
     )
   );
 }
+async function refreshAvailablePayments() {
+  await prisma.payment.updateMany({
+    where: {
+      status: "PENDING",
+      completedAt: {
+        not: null,
+      },
+      releaseAt: {
+        not: null,
+        lte: new Date(),
+      },
+    },
+    data: {
+      status: "AVAILABLE",
+    },
+  });
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -135,7 +152,7 @@ export async function GET(request: NextRequest) {
       The boosterId comes only from the
       authenticated JWT session.
     */
-
+      await refreshAvailablePayments();
     const orders = await prisma.order.findMany({
       where: {
         boosterId: booster.id,
@@ -156,7 +173,58 @@ export async function GET(request: NextRequest) {
         createdAt: "desc",
       },
     });
+const payments = await prisma.payment.findMany({
+  where: {
+    boosterId: booster.id,
+    status: {
+      in: ["AVAILABLE", "PAID"],
+    },
+  },
+  select: {
+    netAmountUsd: true,
+    paidAmountUsd: true,
+    status: true,
+  },
+});
+const deductions = await prisma.deduction.findMany({
+  where: {
+    userId: booster.id,
+    remainingUsd: {
+      gt: 0,
+    },
+  },
+  select: {
+    remainingUsd: true,
+  },
+});
+const availableUsd = payments
+  .filter(
+    (payment) =>
+      payment.status === "AVAILABLE"
+  )
+  .reduce(
+    (sum, payment) =>
+      sum +
+      Math.max(
+        0,
+        Number(payment.netAmountUsd) -
+          Number(payment.paidAmountUsd ?? 0)
+      ),
+    0
+  );
 
+const outstandingFines = deductions.reduce(
+  (sum, deduction) =>
+    sum + Number(deduction.remainingUsd),
+  0
+);
+
+const availableBalanceUsd = Number(
+  Math.max(
+    0,
+    availableUsd - outstandingFines
+  ).toFixed(2)
+);
     const notifications =
       await prisma.notification.findMany({
         where: { userId: booster.id },
@@ -217,10 +285,7 @@ export async function GET(request: NextRequest) {
             booster.extraPenaltyPercent
           ),
 
-        balanceUsd:
-          serializeValue(
-            booster.balanceUsd
-          ),
+        balanceUsd: availableBalanceUsd,
 
         totalEarnedUsd:
           serializeValue(

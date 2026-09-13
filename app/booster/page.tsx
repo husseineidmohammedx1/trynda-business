@@ -8,6 +8,7 @@ import {
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useLanguage } from "@/app/language-provider";
 
 type Booster = {
   id: string;
@@ -296,6 +297,7 @@ function findOrderEarnings(
 
 export default function BoosterPage() {
   const router = useRouter();
+  const { isArabic } = useLanguage();
 
   const [data, setData] =
     useState<ApiResponse | null>(null);
@@ -742,7 +744,7 @@ export default function BoosterPage() {
             }
           >
             <span>◈</span>
-            Overview
+            {isArabic ? "نظرة عامة" : "Overview"}
           </button>
 
           <button
@@ -757,7 +759,7 @@ export default function BoosterPage() {
             }
           >
             <span>▣</span>
-            My Orders
+            {isArabic ? "طلباتي" : "My Orders"}
 
             {activeOrders.length >
               0 && (
@@ -779,7 +781,7 @@ export default function BoosterPage() {
             }
           >
             <span>◇</span>
-            Payments
+            {isArabic ? "المدفوعات" : "Payments"}
           </button>
 
           <button
@@ -797,7 +799,7 @@ export default function BoosterPage() {
             }}
           >
             <span>◉</span>
-            Notifications
+            {isArabic ? "الإشعارات" : "Notifications"}
 
             {notifications.filter(
               (notification) => !notification.readAt
@@ -817,11 +819,11 @@ export default function BoosterPage() {
 
             <div>
               <strong>
-                Account active
+                الحساب نشط
               </strong>
 
               <small>
-                Managed by Trynda
+                تحت إدارة Trynda
               </small>
             </div>
           </div>
@@ -832,7 +834,7 @@ export default function BoosterPage() {
             onClick={logout}
           >
             <span>↪</span>
-            Logout
+            تسجيل الخروج
           </button>
         </div>
       </aside>
