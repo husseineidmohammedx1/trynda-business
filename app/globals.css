@@ -41,11 +41,12 @@
 *::before,
 *::after { box-sizing: border-box; }
 
+
 html {
   min-height: 100%;
   background: var(--ui-bg);
   scroll-behavior: smooth;
-  direction: rtl;
+  direction: ltr;
 }
 
 body,
@@ -60,8 +61,9 @@ body.trynda-app {
   color: var(--ui-text);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  direction: rtl;
+  direction: ltr;
 }
+
 
 button,
 input,
@@ -71,7 +73,7 @@ textarea { font: inherit; }
 input,
 select,
 textarea {
-  text-align: right;
+  text-align: left;
 }
 
 button { cursor: pointer; }
@@ -4234,4 +4236,14 @@ textarea:-webkit-autofill {
   .booster-order-modal-header h2 {
     font-size: 18px;
   }
+}
+
+/* ==========================================================================
+   LAYOUT DIRECTION — LTR (fixed: removed duplicate rules and the
+   conflicting text-align: right that was overriding the LTR direction)
+   ========================================================================== */
+html,
+body {
+  direction: ltr;
+  text-align: left;
 }

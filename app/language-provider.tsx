@@ -15,43 +15,65 @@ type LanguageContextValue = {
   toggleLanguage: () => void;
 };
 
-const LanguageContext = createContext<LanguageContextValue | null>(null);
+const LanguageContext =
+  createContext<LanguageContextValue | null>(null);
 
 export function LanguageProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [language, setLanguage] = useState<Language>("ar");
+  const [language, setLanguage] =
+    useState<Language>("ar");
 
   useEffect(() => {
-    const savedLanguage = window.localStorage.getItem("trynda-language");
+    const savedLanguage =
+      window.localStorage.getItem(
+        "trynda-language"
+      );
+
     const nextLanguage: Language =
       savedLanguage === "en" ? "en" : "ar";
 
     setLanguage(nextLanguage);
-    document.documentElement.lang = nextLanguage;
-    document.documentElement.dir = nextLanguage === "ar" ? "rtl" : "ltr";
+
+    // Keep the entire website LTR.
+    document.documentElement.lang =
+      nextLanguage;
+    document.documentElement.dir =
+      "ltr";
   }, []);
 
   function toggleLanguage() {
-    const nextLanguage: Language = language === "ar" ? "en" : "ar";
+    const nextLanguage: Language =
+      language === "ar" ? "en" : "ar";
 
     setLanguage(nextLanguage);
-    window.localStorage.setItem("trynda-language", nextLanguage);
-    document.documentElement.lang = nextLanguage;
-    document.documentElement.dir = nextLanguage === "ar" ? "rtl" : "ltr";
+
+    window.localStorage.setItem(
+      "trynda-language",
+      nextLanguage
+    );
+
+    // Language changes, but layout direction
+    // always stays left-to-right.
+    document.documentElement.lang =
+      nextLanguage;
+    document.documentElement.dir =
+      "ltr";
   }
 
   return (
     <LanguageContext.Provider
       value={{
         language,
-        isArabic: language === "ar",
+        isArabic:
+          language === "ar",
         toggleLanguage,
       }}
     >
       {children}
+
       <button
         type="button"
         className="language-switcher"
@@ -62,14 +84,17 @@ export function LanguageProvider({
             : "التبديل إلى العربية"
         }
       >
-        {language === "ar" ? "English" : "العربية"}
+        {language === "ar"
+          ? "English"
+          : "العربية"}
       </button>
     </LanguageContext.Provider>
   );
 }
 
 export function useLanguage() {
-  const context = useContext(LanguageContext);
+  const context =
+    useContext(LanguageContext);
 
   if (!context) {
     throw new Error(
