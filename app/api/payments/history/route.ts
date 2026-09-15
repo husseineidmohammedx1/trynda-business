@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifySession } from "@/lib/auth";
+export const dynamic = "force-dynamic";
 
 async function requireAdmin(request: NextRequest) {
   const token = request.cookies.get("session")?.value;
