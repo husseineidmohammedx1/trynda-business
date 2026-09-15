@@ -94,6 +94,26 @@ type PaymentsResponse = {
   totals: Totals;
 };
 
+type PaymentHistoryItem = {
+  id: string;
+  boosterId: string;
+  boosterName: string;
+  boosterEmail: string;
+  month: string;
+  amountUsd: number;
+  exchangeRate: number;
+  amountEgp: number;
+  paymentMethod: PaymentMethod;
+  paymentNumber: string;
+  paidAt: string;
+  createdAt: string;
+};
+
+type PaymentHistoryResponse = {
+  month: string;
+  transactions: PaymentHistoryItem[];
+};
+
 function getCurrentMonth() {
   const now = new Date();
 
@@ -240,9 +260,64 @@ const [payPaymentNumber, setPayPaymentNumber] =
   const [undoingPayment, setUndoingPayment] =
     useState<string | null>(null);
 
+  const [paymentHistory, setPaymentHistory] =
+    useState<PaymentHistoryItem[]>([]);
+
+  const [historyLoading, setHistoryLoading] =
+    useState(false);
+
   // =====================================================
   // LOAD PAYMENTS
   // =====================================================
+
+  async function loadPaymentHistory(
+    selectedMonth = month
+  ) {
+    try {
+      setHistoryLoading(true);
+
+      const response = await fetch(
+        `/api/payments/history?month=${encodeURIComponent(
+          selectedMonth
+        )}`,
+        {
+          cache: "no-store",
+        }
+      );
+
+      const data: unknown = await response.json();
+
+      if (!response.ok) {
+        const message =
+          typeof data === "object" &&
+          data !== null &&
+          "error" in data &&
+          typeof data.error === "string"
+            ? data.error
+            : "Failed to load payment history";
+
+        throw new Error(message);
+      }
+
+      const result =
+        data as PaymentHistoryResponse;
+
+      setPaymentHistory(
+        Array.isArray(result.transactions)
+          ? result.transactions
+          : []
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load payment history"
+      );
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
 
   async function loadPayments() {
     try {
@@ -306,6 +381,8 @@ const [payPaymentNumber, setPayPaymentNumber] =
             : null
         );
       }
+
+      await loadPaymentHistory(month);
     } catch (err) {
       setError(
         err instanceof Error
@@ -2244,6 +2321,206 @@ await loadPayments();
             </div>
           )}
         </section>
+
+        {/* =================================================
+            PAYMENT HISTORY
+        ================================================= */}
+
+        <section
+          className="panel"
+          style={{
+            marginTop: "20px",
+          }}
+        >
+          <div
+            className="section-header"
+            style={{
+              marginBottom: "20px",
+            }}
+          >
+            <div>
+              <h2>
+                {isArabic
+                  ? "سجل دفعات البوسترز"
+                  : "Payment History"}
+              </h2>
+
+              <p>
+                {isArabic
+                  ? `${month} • كل عملية دفع مسجلة بالتاريخ والوقت`
+                  : `${month} • Every booster payment recorded with exact payment details`}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => loadPaymentHistory(month)}
+              disabled={historyLoading}
+              className="refresh-payments-button"
+            >
+              <span
+                className={
+                  historyLoading
+                    ? "refresh-icon spinning"
+                    : "refresh-icon"
+                }
+              >
+                ↻
+              </span>
+
+              <span>
+                {historyLoading
+                  ? "Refreshing..."
+                  : "Refresh History"}
+              </span>
+            </button>
+          </div>
+
+          {historyLoading ? (
+            <div className="empty">
+              Loading payment history...
+            </div>
+          ) : paymentHistory.length === 0 ? (
+            <div className="empty">
+              <div className="empty-icon">💳</div>
+
+              <h3>
+                {isArabic
+                  ? "لا توجد دفعات مسجلة"
+                  : "No payments recorded"}
+              </h3>
+
+              <p>
+                {isArabic
+                  ? "ستظهر هنا كل عملية دفع يتم تنفيذها للبوستر."
+                  : "Every completed booster payment will appear here."}
+              </p>
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ minWidth: "1250px" }}>
+                <thead>
+                  <tr>
+                    <th>
+                      {isArabic ? "التاريخ والوقت" : "Paid At"}
+                    </th>
+                    <th>
+                      {isArabic ? "البوستر" : "Booster"}
+                    </th>
+                    <th>
+                      {isArabic ? "USD المسحوب" : "USD Withdrawn"}
+                    </th>
+                    <th>
+                      {isArabic ? "سعر الصرف" : "Exchange Rate"}
+                    </th>
+                    <th>
+                      {isArabic ? "المبلغ بالجنيه" : "Paid in EGP"}
+                    </th>
+                    <th>
+                      {isArabic ? "طريقة الدفع" : "Payment Method"}
+                    </th>
+                    <th>
+                      {isArabic ? "رقم الدفع" : "Payment Number"}
+                    </th>
+                    <th>
+                      {isArabic ? "الشهر" : "Month"}
+                    </th>
+                    <th>Transaction ID</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {paymentHistory.map((transaction) => (
+                    <tr key={transaction.id}>
+                      <td>
+                        <strong>
+                          {new Date(
+                            transaction.paidAt
+                          ).toLocaleString(
+                            isArabic ? "ar-EG" : "en-US",
+                            {
+                              year: "numeric",
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              second: "2-digit",
+                            }
+                          )}
+                        </strong>
+                      </td>
+
+                      <td>
+                        <strong>{transaction.boosterName}</strong>
+                        <div
+                          className="muted"
+                          style={{
+                            fontSize: "11px",
+                            marginTop: "3px",
+                          }}
+                        >
+                          {transaction.boosterEmail}
+                        </div>
+                      </td>
+
+                      <td>
+                        <strong>
+                          {formatMoney(transaction.amountUsd)}
+                        </strong>
+                      </td>
+
+                      <td>
+                        <strong>
+                          {Number(
+                            transaction.exchangeRate
+                          ).toFixed(4)}
+                        </strong>
+                      </td>
+
+                      <td>
+                        <strong style={{ color: "#6ee7b7" }}>
+                          {Number(
+                            transaction.amountEgp
+                          ).toFixed(2)}{" "}
+                          EGP
+                        </strong>
+                      </td>
+
+                      <td>
+                        <span>
+                          {transaction.paymentMethod ===
+                          "VODAFONE_CASH"
+                            ? "Vodafone Cash"
+                            : "InstaPay"}
+                        </span>
+                      </td>
+
+                      <td>
+                        <strong>
+                          {transaction.paymentNumber}
+                        </strong>
+                      </td>
+
+                      <td>{transaction.month}</td>
+
+                      <td>
+                        <code
+                          style={{
+                            fontSize: "10px",
+                            color: "#a89fff",
+                          }}
+                        >
+                          {transaction.id}
+                        </code>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
       </main>
 
       {payBoosterModal && (
