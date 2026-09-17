@@ -20,30 +20,11 @@ async function requireAdmin(request: NextRequest) {
 }
 
 function serializeBooster(booster: any) {
-  const completedOrders = Array.isArray(
-    booster.orders
-  )
-    ? booster.orders.filter(
-        (order: any) =>
-          order.status === "COMPLETED"
-      )
-    : [];
-
-  const calculatedTotalEarned =
-    completedOrders.reduce(
-      (sum: number, order: any) =>
-        sum +
-        Number(
-          order.boosterAmountUsd ?? 0
-        ),
-      0
-    );
-
   return {
     id: booster.id,
     name: booster.name,
     email: booster.email,
-    profileImageUrl: booster.profileImageUrl,
+    profileImageUrl: booster.profileImageUrl ?? null,
     active: booster.active,
     createdAt: booster.createdAt,
 
@@ -60,9 +41,7 @@ function serializeBooster(booster: any) {
     ),
 
     totalEarnedUsd: Number(
-      booster.orders
-        ? calculatedTotalEarned
-        : booster.totalEarnedUsd ?? 0
+      booster.totalEarnedUsd ?? 0
     ),
 
     totalPaidUsd: Number(
@@ -87,58 +66,160 @@ export async function GET(request: NextRequest) {
 
     if (!session) {
       return NextResponse.json(
-        {
-          error: "Unauthorized",
-        },
-        {
-          status: 401,
-        }
+        { error: "Unauthorized" },
+        { status: 401 }
       );
     }
 
-    const boosters =
-      await prisma.user.findMany({
-        where: {
-          role: "BOOSTER",
-        },
+    const nowMs = Date.now();
 
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          profileImageUrl: true,
-          active: true,
-          createdAt: true,
+    const boosters = await prisma.user.findMany({
+      where: {
+        role: "BOOSTER",
+      },
 
-          platformFeePercent: true,
-          extraPenaltyPercent: true,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        profileImageUrl: true,
+        active: true,
+        createdAt: true,
 
-          balanceUsd: true,
-          totalEarnedUsd: true,
-          totalPaidUsd: true,
+        platformFeePercent: true,
+        extraPenaltyPercent: true,
 
-          _count: {
-            select: {
-              orders: true,
-              payments: true,
-            },
-          },
+        balanceUsd: true,
+        totalEarnedUsd: true,
+        totalPaidUsd: true,
 
-          orders: {
-            select: {
-              status: true,
-              boosterAmountUsd: true,
-            },
+        _count: {
+          select: {
+            orders: true,
+            payments: true,
           },
         },
 
-        orderBy: {
-          createdAt: "desc",
+        // Payment records are the source of truth for the 5-day hold.
+        // Calculate the current available amount on every request so the
+        // booster balance updates automatically after releaseAt expires.
+        orders: {
+          select: {
+            status: true,
+            boosterAmountUsd: true,
+            payment: {
+              select: {
+                netAmountUsd: true,
+                boosterAmountUsd: true,
+                finedUsd: true,
+                paidAmountUsd: true,
+                status: true,
+                releaseAt: true,
+              },
+            },
+          },
         },
-      });
+      },
+
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
 
     return NextResponse.json(
-      boosters.map(serializeBooster)
+      boosters.map((booster) => {
+        let availableBalanceUsd = 0;
+
+        for (const order of booster.orders) {
+          const orderStatus = String(
+            order.status ?? ""
+          ).toUpperCase();
+
+          if (orderStatus.includes("CANCEL")) {
+            continue;
+          }
+
+          const payment = order.payment;
+
+          if (!payment) {
+            continue;
+          }
+
+          const paymentStatus = String(
+            payment.status ?? ""
+          ).toUpperCase();
+
+          // A fully paid payment has nothing left to add.
+          if (paymentStatus === "PAID") {
+            continue;
+          }
+
+          const finedUsd = Number(
+            payment.finedUsd ?? 0
+          );
+
+          const boosterAmountUsd = Number(
+            payment.boosterAmountUsd ??
+              order.boosterAmountUsd ??
+              0
+          );
+
+          // IMPORTANT: use nullish fallback exactly like the Booster
+          // financial calculation. Number(null) would incorrectly become 0.
+          const netUsd =
+            payment.netAmountUsd == null
+              ? boosterAmountUsd - finedUsd
+              : Number(payment.netAmountUsd);
+
+          const paidUsd = Number(
+            payment.paidAmountUsd ?? 0
+          );
+
+          if (!Number.isFinite(netUsd)) {
+            continue;
+          }
+
+          const remainingUsd = Math.max(
+            0,
+            netUsd - (Number.isFinite(paidUsd) ? paidUsd : 0)
+          );
+
+          if (remainingUsd <= 0) {
+            continue;
+          }
+
+          const releaseAtMs = payment.releaseAt
+            ? new Date(
+                payment.releaseAt
+              ).getTime()
+            : NaN;
+
+          // The actual 5-day rule is controlled by releaseAt.
+          // If releaseAt has passed, the payment is available even if
+          // its stored status was not updated yet.
+          const hasValidReleaseAt =
+            Number.isFinite(releaseAtMs);
+
+          const isStillOnHold =
+            hasValidReleaseAt
+              ? releaseAtMs > nowMs
+              : paymentStatus === "ON HOLD";
+
+          if (!isStillOnHold) {
+            availableBalanceUsd += remainingUsd;
+          }
+        }
+
+        return {
+          ...serializeBooster(booster),
+          // Do not return the stale User.balanceUsd here.
+          // The displayed booster balance is calculated from the
+          // unpaid payment records and the 5-day release time.
+          balanceUsd: Number(
+            availableBalanceUsd.toFixed(2)
+          ),
+        };
+      })
     );
   } catch (error) {
     console.error(
@@ -157,6 +238,7 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
 
 // =====================================================
 // CREATE BOOSTER
@@ -365,6 +447,7 @@ export async function POST(
           id: true,
           name: true,
           email: true,
+          profileImageUrl: true,
           active: true,
           createdAt: true,
 
@@ -467,6 +550,7 @@ export async function PATCH(
           id: true,
           name: true,
           email: true,
+          profileImageUrl: true,
           active: true,
           createdAt: true,
 
@@ -710,6 +794,7 @@ export async function PATCH(
           id: true,
           name: true,
           email: true,
+          profileImageUrl: true,
           active: true,
           createdAt: true,
 
