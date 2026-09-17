@@ -60,6 +60,28 @@ function serializeBooster(booster: any) {
 // GET ALL BOOSTERS
 // =====================================================
 
+// =====================================================
+// GET ALL BOOSTERS
+// =====================================================
+
+async function refreshAvailablePayments() {
+  await prisma.payment.updateMany({
+    where: {
+      status: "PENDING",
+      completedAt: {
+        not: null,
+      },
+      releaseAt: {
+        not: null,
+        lte: new Date(),
+      },
+    },
+    data: {
+      status: "AVAILABLE",
+    },
+  });
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await requireAdmin(request);
@@ -71,152 +93,247 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const nowMs = Date.now();
+    /*
+     * IMPORTANT:
+     * Balance here intentionally uses the exact same source and formula
+     * as the Payments page:
+     *
+     *   availableUsd = sum(AVAILABLE netAmountUsd - paidAmountUsd)
+     *   onHoldUsd    = sum(PENDING unreleased netAmountUsd - paidAmountUsd)
+     *   balanceUsd   = availableUsd - outstandingFines
+     *
+     * This keeps /boosters and /payments financially identical.
+     */
+    await refreshAvailablePayments();
 
-    const boosters = await prisma.user.findMany({
-      where: {
-        role: "BOOSTER",
-      },
-
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        profileImageUrl: true,
-        active: true,
-        createdAt: true,
-
-        platformFeePercent: true,
-        extraPenaltyPercent: true,
-
-        balanceUsd: true,
-        totalEarnedUsd: true,
-        totalPaidUsd: true,
-
-        _count: {
-          select: {
-            orders: true,
-            payments: true,
+    const [boosters, payments, fines] =
+      await Promise.all([
+        prisma.user.findMany({
+          where: {
+            role: "BOOSTER",
           },
-        },
 
-        // Payment records are the source of truth for the 5-day hold.
-        // Calculate the current available amount on every request so the
-        // booster balance updates automatically after releaseAt expires.
-        orders: {
           select: {
-            status: true,
-            boosterAmountUsd: true,
-            payment: {
+            id: true,
+            name: true,
+            email: true,
+            profileImageUrl: true,
+            active: true,
+            createdAt: true,
+
+            platformFeePercent: true,
+            extraPenaltyPercent: true,
+
+            balanceUsd: true,
+            totalEarnedUsd: true,
+            totalPaidUsd: true,
+
+            _count: {
               select: {
-                netAmountUsd: true,
-                boosterAmountUsd: true,
-                finedUsd: true,
-                paidAmountUsd: true,
-                status: true,
-                releaseAt: true,
+                orders: true,
+                payments: true,
               },
             },
           },
-        },
-      },
 
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+          orderBy: {
+            createdAt: "desc",
+          },
+        }),
+
+        prisma.payment.findMany({
+          where: {
+            boosterId: {
+              not: null,
+            },
+
+            status: {
+              in: [
+                "PENDING",
+                "AVAILABLE",
+                "PAID",
+              ],
+            },
+          },
+
+          select: {
+            id: true,
+            boosterId: true,
+            netAmountUsd: true,
+            paidAmountUsd: true,
+            status: true,
+            completedAt: true,
+            releaseAt: true,
+            paidAt: true,
+          },
+        }),
+
+        prisma.deduction.findMany({
+          where: {
+            userId: {
+              not: null,
+            },
+
+            remainingUsd: {
+              gt: 0,
+            },
+          },
+
+          select: {
+            id: true,
+            userId: true,
+            remainingUsd: true,
+          },
+
+          orderBy: {
+            createdAt: "asc",
+          },
+        }),
+      ]);
+
+    const paymentsByBooster = new Map<
+      string,
+      typeof payments
+    >();
+
+    for (const payment of payments) {
+      if (!payment.boosterId) {
+        continue;
+      }
+
+      const list =
+        paymentsByBooster.get(payment.boosterId) ||
+        [];
+
+      list.push(payment);
+      paymentsByBooster.set(
+        payment.boosterId,
+        list
+      );
+    }
+
+    const finesByBooster = new Map<
+      string,
+      typeof fines
+    >();
+
+    for (const fine of fines) {
+      if (!fine.userId) {
+        continue;
+      }
+
+      const list =
+        finesByBooster.get(fine.userId) ||
+        [];
+
+      list.push(fine);
+      finesByBooster.set(
+        fine.userId,
+        list
+      );
+    }
 
     return NextResponse.json(
       boosters.map((booster) => {
-        let availableBalanceUsd = 0;
+        const boosterPayments =
+          paymentsByBooster.get(booster.id) || [];
 
-        for (const order of booster.orders) {
-          const orderStatus = String(
-            order.status ?? ""
-          ).toUpperCase();
+        const boosterFines =
+          finesByBooster.get(booster.id) || [];
 
-          if (orderStatus.includes("CANCEL")) {
-            continue;
-          }
-
-          const payment = order.payment;
-
-          if (!payment) {
-            continue;
-          }
-
-          const paymentStatus = String(
-            payment.status ?? ""
-          ).toUpperCase();
-
-          // A fully paid payment has nothing left to add.
-          if (paymentStatus === "PAID") {
-            continue;
-          }
-
-          const finedUsd = Number(
-            payment.finedUsd ?? 0
+        const availablePayments =
+          boosterPayments.filter(
+            (payment) =>
+              payment.status === "AVAILABLE"
           );
 
-          const boosterAmountUsd = Number(
-            payment.boosterAmountUsd ??
-              order.boosterAmountUsd ??
-              0
+        const now = new Date();
+
+        const holdPayments =
+          boosterPayments.filter(
+            (payment) =>
+              payment.status === "PENDING" &&
+              payment.releaseAt &&
+              new Date(payment.releaseAt) > now
           );
 
-          // IMPORTANT: use nullish fallback exactly like the Booster
-          // financial calculation. Number(null) would incorrectly become 0.
-          const netUsd =
-            payment.netAmountUsd == null
-              ? boosterAmountUsd - finedUsd
-              : Number(payment.netAmountUsd);
-
-          const paidUsd = Number(
-            payment.paidAmountUsd ?? 0
+        // Exact same calculation used by /api/payments.
+        const availableUsd =
+          availablePayments.reduce(
+            (sum, payment) =>
+              sum +
+              Math.max(
+                0,
+                Number(payment.netAmountUsd) -
+                  Number(
+                    payment.paidAmountUsd ?? 0
+                  )
+              ),
+            0
           );
 
-          if (!Number.isFinite(netUsd)) {
-            continue;
-          }
-
-          const remainingUsd = Math.max(
-            0,
-            netUsd - (Number.isFinite(paidUsd) ? paidUsd : 0)
+        const onHoldUsd =
+          holdPayments.reduce(
+            (sum, payment) =>
+              sum +
+              Math.max(
+                0,
+                Number(payment.netAmountUsd) -
+                  Number(
+                    payment.paidAmountUsd ?? 0
+                  )
+              ),
+            0
           );
 
-          if (remainingUsd <= 0) {
-            continue;
-          }
+        const outstandingFines =
+          boosterFines.reduce(
+            (sum, fine) =>
+              sum +
+              Number(
+                fine.remainingUsd
+              ),
+            0
+          );
 
-          const releaseAtMs = payment.releaseAt
-            ? new Date(
-                payment.releaseAt
-              ).getTime()
-            : NaN;
+        const balanceUsd = Number(
+          (
+            availableUsd -
+            outstandingFines
+          ).toFixed(2)
+        );
 
-          // The actual 5-day rule is controlled by releaseAt.
-          // If releaseAt has passed, the payment is available even if
-          // its stored status was not updated yet.
-          const hasValidReleaseAt =
-            Number.isFinite(releaseAtMs);
-
-          const isStillOnHold =
-            hasValidReleaseAt
-              ? releaseAtMs > nowMs
-              : paymentStatus === "ON HOLD";
-
-          if (!isStillOnHold) {
-            availableBalanceUsd += remainingUsd;
-          }
-        }
+        const totalPaidUsd =
+          boosterPayments.reduce(
+            (sum, payment) =>
+              sum +
+              Number(
+                payment.paidAmountUsd ?? 0
+              ),
+            0
+          );
 
         return {
           ...serializeBooster(booster),
-          // Do not return the stale User.balanceUsd here.
-          // The displayed booster balance is calculated from the
-          // unpaid payment records and the 5-day release time.
-          balanceUsd: Number(
-            availableBalanceUsd.toFixed(2)
+
+          // The displayed Balance is the Payments-page Balance.
+          balanceUsd,
+
+          // These are included for consistency/debugging and do not
+          // change any existing /boosters page field.
+          onHoldUsd: Number(
+            onHoldUsd.toFixed(2)
+          ),
+
+          outstandingFinesUsd: Number(
+            outstandingFines.toFixed(2)
+          ),
+
+          // Keep the existing stored lifetime paid value when present.
+          // This fallback only helps if it is missing.
+          totalPaidUsd: Number(
+            booster.totalPaidUsd ??
+              totalPaidUsd
           ),
         };
       })
@@ -238,7 +355,6 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-
 
 // =====================================================
 // CREATE BOOSTER
