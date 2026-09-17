@@ -52,6 +52,28 @@ type ExchangeRateResponse = {
   rate?: number;
 };
 
+type PaymentMethod =
+  | "VODAFONE_CASH"
+  | "INSTAPAY";
+
+type PaymentHistoryItem = {
+  id: string;
+  boosterId: string;
+  month: string;
+  amountUsd: number;
+  exchangeRate: number;
+  amountEgp: number;
+  paymentMethod: PaymentMethod;
+  paymentNumber: string;
+  paidAt: string;
+  createdAt: string;
+};
+
+type PaymentHistoryResponse = {
+  transactions?: PaymentHistoryItem[];
+  error?: string;
+};
+
 function formatMoney(value: unknown) {
   const number = Number(value ?? 0);
 
@@ -70,6 +92,36 @@ function formatEgp(value: unknown) {
   }
 
   return `${number.toFixed(2)} جنيه مصري`;
+}
+
+function getOrderPayment(order: Record<string, unknown>) {
+  const payment = order.payment;
+
+  if (!payment || typeof payment !== "object") {
+    return null;
+  }
+
+  return payment as Record<string, unknown>;
+}
+
+function isCancelledOrder(order: Record<string, unknown>) {
+  return String(order.status ?? "").toUpperCase() === "CANCELLED";
+}
+
+function getPaymentAmount(
+  payment: Record<string, unknown>,
+  key: string,
+  fallback = 0
+) {
+  const value = Number(payment[key] ?? fallback);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function getPaymentReleaseAt(
+  payment: Record<string, unknown>
+) {
+  const value = payment.releaseAt;
+  return value ? new Date(String(value)) : null;
 }
 
 async function resizeProfileImage(file: File) {
@@ -139,6 +191,44 @@ function formatDate(value: unknown) {
     {
       dateStyle: "medium",
       timeStyle: "short",
+    }
+  );
+}
+
+function paymentMethodLabel(
+  method: PaymentMethod,
+  isArabic: boolean
+) {
+  if (method === "VODAFONE_CASH") {
+    return isArabic ? "فودافون كاش" : "Vodafone Cash";
+  }
+
+  return isArabic ? "إنستاباي" : "InstaPay";
+}
+
+function formatPaymentHistoryDate(
+  value: string | null | undefined,
+  isArabic: boolean
+) {
+  if (!value) {
+    return "—";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleString(
+    isArabic ? "ar-EG" : "en-US",
+    {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
     }
   );
 }
@@ -314,6 +404,15 @@ export default function BoosterPage() {
   const [exchangeRate, setExchangeRate] =
     useState<number | null>(null);
 
+  const [paymentHistory, setPaymentHistory] =
+    useState<PaymentHistoryItem[]>([]);
+
+  const [historyLoading, setHistoryLoading] =
+    useState(false);
+
+  const [financialSummaryUpdatedAt, setFinancialSummaryUpdatedAt] =
+    useState(0);
+
   const [savingProfileImage, setSavingProfileImage] =
     useState(false);
 
@@ -333,6 +432,43 @@ export default function BoosterPage() {
 
   const [showNotifications, setShowNotifications] =
     useState(false);
+
+  async function loadPaymentHistory() {
+    try {
+      setHistoryLoading(true);
+
+      const response = await fetch(
+        "/api/booster/payment-history",
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      );
+
+      const result =
+        (await response.json()) as PaymentHistoryResponse;
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+            "Failed to load payment history"
+        );
+      }
+
+      setPaymentHistory(
+        Array.isArray(result.transactions)
+          ? result.transactions
+          : []
+      );
+    } catch (requestError) {
+      console.error(
+        "Failed to load payment history:",
+        requestError
+      );
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   async function loadPortal(
     refresh = false
@@ -373,6 +509,7 @@ export default function BoosterPage() {
       }
 
       setData(result);
+      setFinancialSummaryUpdatedAt(Date.now());
       const exchangeResponse = await fetch(
         "/api/exchange-rate",
         {
@@ -391,6 +528,8 @@ export default function BoosterPage() {
             : null
         );
       }
+
+      await loadPaymentHistory();
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -606,6 +745,109 @@ export default function BoosterPage() {
       }),
     [orders]
   );
+
+  const financialSummary = useMemo(() => {
+    const now = Date.now();
+
+    let totalMoneyUsd = 0;
+    let platformFeeUsd = 0;
+    let finedUsd = 0;
+    let paidUsd = 0;
+    let onHoldUsd = 0;
+    let balanceUsd = 0;
+
+    for (const order of orders) {
+      if (isCancelledOrder(order)) {
+        continue;
+      }
+
+      const payment = getOrderPayment(order);
+
+      if (!payment) {
+        continue;
+      }
+
+      const grossUsd = getPaymentAmount(
+        payment,
+        "orderPriceUsd",
+        Number(order.priceUsd ?? 0)
+      );
+
+      const feeUsd = getPaymentAmount(
+        payment,
+        "platformFeeUsd"
+      );
+
+      const fineUsd = getPaymentAmount(
+        payment,
+        "finedUsd"
+      );
+
+      const netUsd = getPaymentAmount(
+        payment,
+        "netAmountUsd",
+        getPaymentAmount(
+          payment,
+          "boosterAmountUsd"
+        ) - fineUsd
+      );
+
+      const paidForOrderUsd = getPaymentAmount(
+        payment,
+        "paidAmountUsd"
+      );
+
+      totalMoneyUsd += grossUsd;
+      platformFeeUsd += feeUsd;
+      finedUsd += fineUsd;
+      paidUsd += paidForOrderUsd;
+
+      const releaseAt = getPaymentReleaseAt(payment);
+      const remainingUsd = Math.max(
+        0,
+        netUsd - paidForOrderUsd
+      );
+
+      const isStillOnHold =
+        String(payment.status ?? "").toUpperCase() ===
+          "ON HOLD" ||
+        Boolean(
+          releaseAt &&
+            !Number.isNaN(releaseAt.getTime()) &&
+            releaseAt.getTime() > now
+        );
+
+      if (isStillOnHold) {
+        onHoldUsd += remainingUsd;
+      } else {
+        balanceUsd += remainingUsd;
+      }
+    }
+
+    return {
+      totalMoneyUsd,
+      platformFeeUsd,
+      finedUsd,
+      paidUsd,
+      onHoldUsd,
+      balanceUsd,
+    };
+  }, [orders, financialSummaryUpdatedAt]);
+
+  const financialBalanceEgp =
+    exchangeRate !== null
+      ? financialSummary.balanceUsd * exchangeRate
+      : null;
+
+  const financialOnHoldEgp =
+    exchangeRate !== null
+      ? financialSummary.onHoldUsd * exchangeRate
+      : null;
+
+  const financialPaidEgp =
+    exchangeRate !== null
+      ? financialSummary.paidUsd * exchangeRate
+      : null;
 
   if (loading) {
     return (
@@ -1080,6 +1322,118 @@ export default function BoosterPage() {
               </article>
             </section>
 
+            <section className="booster-financial-grid" aria-label="Financial summary">
+              <article className="booster-financial-card">
+                <div className="booster-financial-card-head">
+                  <span>Balance</span>
+                  <span className="booster-financial-card-icon">$</span>
+                </div>
+
+                <strong
+                  className={
+                    financialSummary.balanceUsd < 0
+                      ? "danger"
+                      : "success"
+                  }
+                >
+                  {formatMoney(financialSummary.balanceUsd)}
+                </strong>
+
+                <span className="booster-financial-egp-label">
+                  السعر بالجنية المصري المستحق
+                </span>
+
+                <strong className="booster-financial-egp">
+                  {formatEgp(financialBalanceEgp)}
+                </strong>
+
+                <small>Available to pay</small>
+              </article>
+
+              <article className="booster-financial-card">
+                <div className="booster-financial-card-head">
+                  <span>On Hold</span>
+                  <span className="booster-financial-card-icon">◷</span>
+                </div>
+
+                <strong className="warning">
+                  {formatMoney(financialSummary.onHoldUsd)}
+                </strong>
+
+                <span className="booster-financial-egp-label">
+                  السعر بالجنية المصري المستحق
+                </span>
+
+                <strong className="booster-financial-egp">
+                  {formatEgp(financialOnHoldEgp)}
+                </strong>
+
+                <small>Waiting 5 days</small>
+              </article>
+
+              <article className="booster-financial-card">
+                <div className="booster-financial-card-head">
+                  <span>Fined</span>
+                  <span className="booster-financial-card-icon">−$</span>
+                </div>
+
+                <strong className="danger">
+                  {formatMoney(financialSummary.finedUsd)}
+                </strong>
+
+                <small>Manual fines</small>
+              </article>
+
+              <article className="booster-financial-card">
+                <div className="booster-financial-card-head">
+                  <span>Paid</span>
+                  <span className="booster-financial-card-icon">✓</span>
+                </div>
+
+                <strong>
+                  {formatMoney(financialSummary.paidUsd)}
+                </strong>
+
+                <span className="booster-financial-egp-label">
+                  السعر بالجنية المصري المستحق
+                </span>
+
+                <strong className="booster-financial-egp">
+                  {formatEgp(financialPaidEgp)}
+                </strong>
+
+                <small>Paid amount</small>
+              </article>
+
+              <article className="booster-financial-card">
+                <div className="booster-financial-card-head">
+                  <span>Total Money</span>
+                  <span className="booster-financial-card-icon">↗</span>
+                </div>
+
+                <strong>
+                  {formatMoney(financialSummary.totalMoneyUsd)}
+                </strong>
+
+                <small>Before platform fee</small>
+              </article>
+
+              <article className="booster-financial-card">
+                <div className="booster-financial-card-head">
+                  <span>Platform Fee</span>
+                  <span className="booster-financial-card-icon">−</span>
+                </div>
+
+                <strong className="danger">
+                  -{formatMoney(financialSummary.platformFeeUsd)}
+                </strong>
+
+                <small>
+                  {Number(booster?.platformFeePercent ?? 0).toFixed(2)}%
+                </small>
+              </article>
+            </section>
+
             <section
               id="booster-notifications"
               className="booster-notifications-panel"
@@ -1455,36 +1809,251 @@ export default function BoosterPage() {
         ===================================================== */}
 
         {activeTab === "payments" && (
-          <section className="booster-panel">
-            <div className="booster-panel-header">
-              <div>
-                <span className="booster-panel-kicker">
-                  FINANCIAL
-                </span>
+          <>
+            <section className="booster-panel">
+              <div className="booster-panel-header">
+                <div>
+                  <span className="booster-panel-kicker">
+                    {isArabic ? "السجل المالي" : "PAYOUT HISTORY"}
+                  </span>
 
-                <h2>
-                  Payments
-                </h2>
+                  <h2>
+                    {isArabic ? "سجل الدفعات" : "Payment History"}
+                  </h2>
 
-                <p>
-                  Payment records connected
-                  to your orders.
-                </p>
+                  <p>
+                    {isArabic
+                      ? "الدفعات التي تم تحويلها لك من الإدارة."
+                      : "Payments sent to you by the administration."}
+                  </p>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                  }}
+                >
+                  <div className="booster-count">
+                    {paymentHistory.length}{" "}
+                    {isArabic ? "دفعة" : "payouts"}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="refresh-orders-button"
+                    onClick={() =>
+                      void loadPaymentHistory()
+                    }
+                    disabled={historyLoading}
+                  >
+                    <span
+                      className={
+                        historyLoading
+                          ? "refresh-icon spinning"
+                          : "refresh-icon"
+                      }
+                    >
+                      ↻
+                    </span>
+
+                    {historyLoading
+                      ? isArabic
+                        ? "جاري التحديث..."
+                        : "Refreshing..."
+                      : isArabic
+                      ? "تحديث"
+                      : "Refresh"}
+                  </button>
+                </div>
               </div>
 
-              <div className="booster-count">
-                {booster?.paymentsCount ||
-                  0} records
-              </div>
-            </div>
+              {historyLoading && paymentHistory.length === 0 ? (
+                <div className="booster-empty">
+                  <div>◇</div>
+                  <h3>
+                    {isArabic
+                      ? "جاري تحميل سجل الدفعات"
+                      : "Loading payment history"}
+                  </h3>
+                </div>
+              ) : paymentHistory.length === 0 ? (
+                <div className="booster-empty">
+                  <div>◇</div>
 
-            <PaymentsTable
-              orders={orders}
-              onViewDetails={
-                setSelectedOrder
-              }
-            />
-          </section>
+                  <h3>
+                    {isArabic
+                      ? "لا توجد دفعات سابقة"
+                      : "No payout history yet"}
+                  </h3>
+
+                  <p>
+                    {isArabic
+                      ? "ستظهر هنا الدفعات التي يتم تحويلها لك."
+                      : "Your completed payouts will appear here."}
+                  </p>
+                </div>
+              ) : (
+                <div className="booster-table-wrap">
+                  <table className="booster-table">
+                    <thead>
+                      <tr>
+                        <th>
+                          {isArabic ? "التاريخ" : "Date"}
+                        </th>
+                        <th>
+                          {isArabic ? "الشهر" : "Month"}
+                        </th>
+                        <th>
+                          {isArabic
+                            ? "المسحوب بالدولار"
+                            : "USD Withdrawn"}
+                        </th>
+                        <th>
+                          {isArabic
+                            ? "سعر الصرف"
+                            : "Exchange Rate"}
+                        </th>
+                        <th>
+                          {isArabic
+                            ? "المدفوع بالجنيه"
+                            : "Paid in EGP"}
+                        </th>
+                        <th>
+                          {isArabic
+                            ? "طريقة الدفع"
+                            : "Method"}
+                        </th>
+                        <th>
+                          {isArabic
+                            ? "رقم الدفع"
+                            : "Payment Number"}
+                        </th>
+                        <th>Transaction ID</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {paymentHistory.map((transaction) => (
+                        <tr key={transaction.id}>
+                          <td>
+                            <strong>
+                              {formatPaymentHistoryDate(
+                                transaction.paidAt,
+                                isArabic
+                              )}
+                            </strong>
+                          </td>
+
+                          <td>
+                            <strong>
+                              {transaction.month}
+                            </strong>
+                          </td>
+
+                          <td>
+                            <strong>
+                              {formatMoney(
+                                transaction.amountUsd
+                              )}
+                            </strong>
+                          </td>
+
+                          <td>
+                            <strong>
+                              {Number(
+                                transaction.exchangeRate
+                              ).toFixed(4)}
+                            </strong>
+                          </td>
+
+                          <td>
+                            <strong
+                              style={{
+                                color: "#6ee7b7",
+                              }}
+                            >
+                              {Number(
+                                transaction.amountEgp
+                              ).toFixed(2)} EGP
+                            </strong>
+
+                            <small className="booster-egp-amount success">
+                              {isArabic
+                                ? "تم التحويل بالفعل"
+                                : "Completed payout"}
+                            </small>
+                          </td>
+
+                          <td>
+                            <span className="status-success">
+                              {paymentMethodLabel(
+                                transaction.paymentMethod,
+                                isArabic
+                              )}
+                            </span>
+                          </td>
+
+                          <td>
+                            <strong>
+                              {transaction.paymentNumber}
+                            </strong>
+                          </td>
+
+                          <td>
+                            <code
+                              style={{
+                                fontSize: "10px",
+                                color: "#a89fff",
+                              }}
+                            >
+                              {transaction.id}
+                            </code>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            <section
+              className="booster-panel"
+              style={{ marginTop: "18px" }}
+            >
+              <div className="booster-panel-header">
+                <div>
+                  <span className="booster-panel-kicker">
+                    FINANCIAL
+                  </span>
+
+                  <h2>
+                    {isArabic
+                      ? "دفعات الطلبات"
+                      : "Order Payments"}
+                  </h2>
+
+                  <p>
+                    {isArabic
+                      ? "تفاصيل المدفوعات المرتبطة بالطلبات التي تم إسنادها لك."
+                      : "Payment records connected to your assigned orders."}
+                  </p>
+                </div>
+
+                <div className="booster-count">
+                  {booster?.paymentsCount || 0}{" "}
+                  {isArabic ? "سجل" : "records"}
+                </div>
+              </div>
+
+              <PaymentsTable
+                orders={orders}
+                onViewDetails={setSelectedOrder}
+              />
+            </section>
+          </>
         )}
 
         <footer className="booster-footer">
@@ -1666,6 +2235,109 @@ export default function BoosterPage() {
           </div>
         </div>
       )}
+            <style jsx>{`
+              .booster-financial-grid {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 14px;
+                margin: 0 0 18px;
+              }
+
+              .booster-financial-card {
+                min-width: 0;
+                padding: 18px;
+                border: 1px solid rgba(148, 163, 184, 0.10);
+                border-radius: 18px;
+                background: linear-gradient(
+                  145deg,
+                  rgba(17, 26, 45, 0.96),
+                  rgba(9, 15, 28, 0.96)
+                );
+                box-shadow:
+                  inset 0 1px 0 rgba(255, 255, 255, 0.025),
+                  0 12px 30px rgba(0, 0, 0, 0.12);
+              }
+
+              .booster-financial-card-head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+                margin-bottom: 11px;
+                color: #8f9bb0;
+                font-size: 12px;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+              }
+
+              .booster-financial-card-icon {
+                display: grid;
+                place-items: center;
+                width: 30px;
+                height: 30px;
+                border-radius: 10px;
+                background: rgba(117, 104, 255, 0.08);
+                border: 1px solid rgba(117, 104, 255, 0.12);
+                color: #bdb6ff;
+                font-size: 12px;
+                font-weight: 800;
+              }
+
+              .booster-financial-card > strong {
+                display: block;
+                color: #eef2ff;
+                font-size: 26px;
+                line-height: 1.05;
+                letter-spacing: -0.03em;
+              }
+
+              .booster-financial-card > strong.success {
+                color: #6ee7b7;
+              }
+
+              .booster-financial-card > strong.warning {
+                color: #fcd34d;
+              }
+
+              .booster-financial-card > strong.danger {
+                color: #fca5a5;
+              }
+
+              .booster-financial-egp-label {
+                display: block;
+                margin-top: 9px;
+                color: #6f7d95;
+                font-size: 10px;
+                line-height: 1.4;
+              }
+
+              .booster-financial-egp {
+                margin-top: 3px !important;
+                color: #cbd5e1 !important;
+                font-size: 17px !important;
+                letter-spacing: -0.01em !important;
+              }
+
+              .booster-financial-card > small {
+                display: block;
+                margin-top: 8px;
+                color: #66748d;
+                font-size: 10px;
+              }
+
+              @media (max-width: 1100px) {
+                .booster-financial-grid {
+                  grid-template-columns: repeat(2, minmax(0, 1fr));
+                }
+              }
+
+              @media (max-width: 680px) {
+                .booster-financial-grid {
+                  grid-template-columns: 1fr;
+                }
+              }
+            `}</style>
     </main>
   );
 }
