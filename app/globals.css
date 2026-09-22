@@ -86,21 +86,34 @@ textarea:disabled { cursor: not-allowed; opacity: 0.5; }
 a { color: inherit; }
 
 .language-switcher {
-  position: fixed;
-  top: 16px;
-  left: 16px;
-  z-index: 2000;
-  min-width: 82px;
+  display: none !important;
+  position: absolute;
+  top: 18px;
+  right: 28px;
+  left: auto;
+  z-index: 1200;
+  min-width: 88px;
+  min-height: 38px;
   padding: 8px 12px;
-  border: 1px solid rgba(117, 104, 255, 0.35);
-  border-radius: 9px;
-  background: rgba(11, 17, 32, 0.9);
-  color: #e7e4ff;
+  border: 1px solid rgba(117, 104, 255, 0.24);
+  border-radius: 10px;
+  background: rgba(11, 17, 32, 0.78);
+  color: #dcd8ff;
   font-size: 11px;
-  font-weight: 700;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  font-weight: 800;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.14);
   backdrop-filter: blur(14px);
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease, transform 180ms ease;
 }
+
+/* Dashboard: keep the language control fixed while scrolling. */
+body:has(.dashboard-shell) .language-switcher {
+  display: inline-flex !important;
+  position: fixed;
+  top: 18px;
+  right: 28px;
+}
+
 
 .language-switcher:hover {
   border-color: rgba(152, 142, 255, 0.7);
@@ -268,6 +281,10 @@ aside > button:hover:not(:disabled) { border-color: rgba(239, 68, 68, 0.22); bac
 
 .content { position: relative; z-index: 2; width: 100%; max-width: none; padding: 34px 42px 50px; }
 header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 4px 0 10px; margin-bottom: 30px; }
+
+.dashboard-shell .content > header {
+  padding-right: 150px;
+}
 header h1 { margin: 0 0 6px; font-size: clamp(27px, 3vw, 32px); font-weight: 800; letter-spacing: -0.045em; line-height: 1.1; text-shadow: 0 8px 30px rgba(0, 0, 0, 0.25); }
 header p { margin: 0; color: #7c89a2; font-size: 13px; }
 
@@ -638,6 +655,26 @@ textarea:-webkit-autofill {
 }
 
 @media (max-width: 720px) {
+  .language-switcher {
+    top: 10px;
+    right: 12px;
+    min-width: 78px;
+    min-height: 36px;
+    padding: 7px 10px;
+    font-size: 10px;
+  }
+
+  body:has(.dashboard-shell) .language-switcher {
+    top: 10px;
+    right: 12px;
+  }
+
+
+  .dashboard-shell .content > header {
+    padding-right: 0;
+    padding-top: 58px;
+  }
+
   aside { grid-template-columns: 1fr auto; min-height: 64px; padding: 8px 14px; }
   .sidebar-brand { margin-right: 0; }
   .sidebar-brand-logo { width: 40px; height: 40px; border-radius: 12px; }
@@ -669,6 +706,10 @@ textarea:-webkit-autofill {
 }
 
 @media (max-width: 420px) {
+  .dashboard-shell .content > header {
+    padding-top: 52px;
+  }
+
   .sidebar-brand-text span,
   .login-status { display: none; }
   aside nav a { min-height: 40px; padding: 9px 11px; font-size: 12px; }

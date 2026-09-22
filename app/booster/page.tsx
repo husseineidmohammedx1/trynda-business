@@ -389,6 +389,8 @@ export default function BoosterPage() {
   const router = useRouter();
   const { isArabic } = useLanguage();
 
+  const t = (en: string, ar: string) => (isArabic ? ar : en);
+
   const [data, setData] =
     useState<ApiResponse | null>(null);
 
@@ -970,7 +972,7 @@ export default function BoosterPage() {
         </div>
 
         <div className="booster-nav-label">
-          WORKSPACE
+          {t("WORKSPACE", "مساحة العمل")}
         </div>
 
         <nav className="booster-nav">
@@ -1061,11 +1063,11 @@ export default function BoosterPage() {
 
             <div>
               <strong>
-                الحساب نشط
+                {t("Account active", "الحساب نشط")}
               </strong>
 
               <small>
-                تحت إدارة Trynda
+                {t("Managed by Trynda", "تحت إدارة Trynda")}
               </small>
             </div>
           </div>
@@ -1076,7 +1078,7 @@ export default function BoosterPage() {
             onClick={logout}
           >
             <span>↪</span>
-            تسجيل الخروج
+            {t("Logout", "تسجيل الخروج")}
           </button>
         </div>
       </aside>
@@ -1089,11 +1091,11 @@ export default function BoosterPage() {
         <header className="booster-header">
           <div>
             <div className="booster-eyebrow">
-              BOOSTER WORKSPACE
+              {t("BOOSTER WORKSPACE", "مساحة عمل البوستر")}
             </div>
 
             <h1>
-              Welcome back,{" "}
+              {t("Welcome back,", "مرحبًا بعودتك،")}{" "}
               <span>
                 {booster?.name ||
                   "Booster"}
@@ -1101,8 +1103,7 @@ export default function BoosterPage() {
             </h1>
 
             <p>
-              Your assigned orders and
-              earnings.
+              {t("Your assigned orders and earnings.", "طلباتك المسندة وأرباحك.")}
             </p>
           </div>
 
@@ -1139,7 +1140,7 @@ export default function BoosterPage() {
               {showNotifications && (
                 <div className="booster-notification-dropdown">
                   <div className="booster-notification-dropdown-head">
-                    <strong>Notifications</strong>
+                    <strong>{t("Notifications", "الإشعارات")}</strong>
                     <span>
                       {notifications.length}
                     </span>
@@ -1147,7 +1148,7 @@ export default function BoosterPage() {
 
                   {notifications.length === 0 ? (
                     <div className="booster-dropdown-empty">
-                      No notifications yet.
+                      {t("No notifications yet.", "لا توجد إشعارات حاليًا.")}
                     </div>
                   ) : (
                     <div className="booster-dropdown-list">
@@ -1184,7 +1185,7 @@ export default function BoosterPage() {
 
             <div className="booster-role-badge">
               <span />
-              BOOSTER
+              {t("BOOSTER", "بوستر")}
             </div>
 
             <button
@@ -1218,11 +1219,30 @@ export default function BoosterPage() {
 
         {activeTab === "overview" && (
           <>
+            <div className="booster-overview-language-row">
+              <button
+                type="button"
+                className="booster-language-switcher"
+                onClick={() => {
+                  const languageButton =
+                    document.querySelector<HTMLButtonElement>(
+                      ".language-switcher"
+                    );
+
+                  languageButton?.click();
+                }}
+                aria-label={t("Change language", "تغيير اللغة")}
+              >
+                <span>◎</span>
+                {isArabic ? "English" : "العربية"}
+              </button>
+            </div>
+
             <section className="booster-hero-grid">
               <article className="booster-balance-card">
                 <div>
                   <span>
-                    AVAILABLE BALANCE
+                    {t("AVAILABLE BALANCE", "الرصيد المتاح")}
                   </span>
 
                   <strong>
@@ -1232,7 +1252,7 @@ export default function BoosterPage() {
                   </strong>
 
                   <span className="booster-balance-egp-label">
-                    السعر بالجنية المصري المستحق
+                    {t("Current USD rate", "سعر الدولار الحالي")}
                   </span>
 
                   <strong className="booster-balance-egp">
@@ -1240,8 +1260,7 @@ export default function BoosterPage() {
                   </strong>
 
                   <small>
-                    Current balance
-                    available for payout
+                    {t("Current balance available for payout", "الرصيد الحالي المتاح للسحب")}
                   </small>
                 </div>
 
@@ -1276,7 +1295,7 @@ export default function BoosterPage() {
 
                   <div>
                     <span>
-                      ACCOUNT
+                      {t("ACCOUNT", "الحساب")}
                     </span>
 
                     <strong>
@@ -1291,14 +1310,14 @@ export default function BoosterPage() {
 
                 <div className="booster-account-status">
                   <span />
-                  Active account
+                  {t("Active account", "حساب نشط")}
                 </div>
 
                 <div className="booster-profile-actions">
                   <label className="ui-button--primary">
                     {savingProfileImage
-                      ? "Saving..."
-                      : "Choose profile photo"}
+                      ? t("Saving...", "جارٍ الحفظ...")
+                      : t("Choose profile photo", "اختيار صورة الحساب")}
                     <input
                       type="file"
                       accept="image/jpeg,image/png,image/webp"
@@ -1314,7 +1333,7 @@ export default function BoosterPage() {
                       onClick={removeProfileImage}
                       disabled={savingProfileImage}
                     >
-                      Remove
+                      {t("Remove", "إزالة")}
                     </button>
                   )}
                 </div>
@@ -1325,7 +1344,7 @@ export default function BoosterPage() {
             <section className="booster-financial-grid" aria-label="Financial summary">
               <article className="booster-financial-card">
                 <div className="booster-financial-card-head">
-                  <span>Balance</span>
+                  <span>{t("Balance", "الرصيد")}</span>
                   <span className="booster-financial-card-icon">$</span>
                 </div>
 
@@ -1340,19 +1359,19 @@ export default function BoosterPage() {
                 </strong>
 
                 <span className="booster-financial-egp-label">
-                  السعر بالجنية المصري المستحق
+                  {t("Current USD rate", "سعر الدولار الحالي")}
                 </span>
 
                 <strong className="booster-financial-egp">
                   {formatEgp(financialBalanceEgp)}
                 </strong>
 
-                <small>Available to pay</small>
+                <small>{t("Available to pay", "متاح للسحب")}</small>
               </article>
 
               <article className="booster-financial-card">
                 <div className="booster-financial-card-head">
-                  <span>On Hold</span>
+                  <span>{t("On Hold", "معلق")}</span>
                   <span className="booster-financial-card-icon">◷</span>
                 </div>
 
@@ -1361,19 +1380,19 @@ export default function BoosterPage() {
                 </strong>
 
                 <span className="booster-financial-egp-label">
-                  السعر بالجنية المصري المستحق
+                  {t("Current USD rate", "سعر الدولار الحالي")}
                 </span>
 
                 <strong className="booster-financial-egp">
                   {formatEgp(financialOnHoldEgp)}
                 </strong>
 
-                <small>Waiting 5 days</small>
+                <small>{t("Waiting 5 days", "في فترة الانتظار 5 أيام")}</small>
               </article>
 
               <article className="booster-financial-card">
                 <div className="booster-financial-card-head">
-                  <span>Fined</span>
+                  <span>{t("Fined", "الخصومات")}</span>
                   <span className="booster-financial-card-icon">−$</span>
                 </div>
 
@@ -1381,12 +1400,12 @@ export default function BoosterPage() {
                   {formatMoney(financialSummary.finedUsd)}
                 </strong>
 
-                <small>Manual fines</small>
+                <small>{t("Manual fines", "خصومات يدوية")}</small>
               </article>
 
               <article className="booster-financial-card">
                 <div className="booster-financial-card-head">
-                  <span>Paid</span>
+                  <span>{t("Paid", "المدفوع")}</span>
                   <span className="booster-financial-card-icon">✓</span>
                 </div>
 
@@ -1402,12 +1421,14 @@ export default function BoosterPage() {
                   {formatEgp(financialPaidEgp)}
                 </strong>
 
-                <small>Paid amount</small>
+                <small>
+                  {t("Paid at the exchange rate at payment time", "تم الدفع بسعر الصرف وقت الدفع")}
+                </small>
               </article>
 
               <article className="booster-financial-card">
                 <div className="booster-financial-card-head">
-                  <span>Total Money</span>
+                  <span>{t("Total Money", "إجمالي المبلغ")}</span>
                   <span className="booster-financial-card-icon">↗</span>
                 </div>
 
@@ -1415,12 +1436,12 @@ export default function BoosterPage() {
                   {formatMoney(financialSummary.totalMoneyUsd)}
                 </strong>
 
-                <small>Before platform fee</small>
+                <small>{t("Before platform fee", "قبل رسوم المنصة")}</small>
               </article>
 
               <article className="booster-financial-card">
                 <div className="booster-financial-card-head">
-                  <span>Platform Fee</span>
+                  <span>{t("Platform Fee", "رسوم المنصة")}</span>
                   <span className="booster-financial-card-icon">−</span>
                 </div>
 
@@ -1440,8 +1461,8 @@ export default function BoosterPage() {
             >
               <div className="booster-section-heading">
                 <div>
-                  <span>NOTIFICATIONS</span>
-                  <h2>Recent activity</h2>
+                  <span>{t("NOTIFICATIONS", "الإشعارات")}</span>
+                  <h2>{t("Recent activity", "النشاط الأخير")}</h2>
                 </div>
                 <strong>
                   {notifications.filter(
@@ -1452,7 +1473,7 @@ export default function BoosterPage() {
 
               {notifications.length === 0 ? (
                 <p className="booster-notifications-empty">
-                  No notifications yet.
+                  {t("No notifications yet.", "لا توجد إشعارات حاليًا.")}
                 </p>
               ) : (
                 <div className="booster-notifications-list">
@@ -1492,7 +1513,7 @@ export default function BoosterPage() {
                   </div>
 
                   <span>
-                    Total Earned
+                    {t("Total Earned", "إجمالي الأرباح")}
                   </span>
                 </div>
 
@@ -1514,7 +1535,7 @@ export default function BoosterPage() {
                   </div>
 
                   <span>
-                    Total Paid
+                    {t("Total Paid", "إجمالي المدفوع")}
                   </span>
                 </div>
 
@@ -1525,7 +1546,7 @@ export default function BoosterPage() {
                 </strong>
 
                 <small>
-                  Completed payouts
+                  {t("Completed payouts", "الدفعات المكتملة")}
                 </small>
               </div>
 
@@ -1536,7 +1557,7 @@ export default function BoosterPage() {
                   </div>
 
                   <span>
-                    Active Orders
+                    {t("Active Orders", "الطلبات النشطة")}
                   </span>
                 </div>
 
@@ -1545,7 +1566,7 @@ export default function BoosterPage() {
                 </strong>
 
                 <small>
-                  Current assignments
+                  {t("Current assignments", "الطلبات الحالية")}
                 </small>
               </div>
 
@@ -1556,7 +1577,7 @@ export default function BoosterPage() {
                   </div>
 
                   <span>
-                    Completed
+                    {t("Completed", "مكتمل")}
                   </span>
                 </div>
 
@@ -1565,7 +1586,7 @@ export default function BoosterPage() {
                 </strong>
 
                 <small>
-                  Completed orders
+                  {t("Completed orders", "الطلبات المكتملة")}
                 </small>
               </div>
             </section>
@@ -1575,11 +1596,11 @@ export default function BoosterPage() {
                 <div className="booster-panel-header">
                   <div>
                     <span className="booster-panel-kicker">
-                      ACCOUNT
+                      {t("ACCOUNT", "الحساب")}
                     </span>
 
                     <h2>
-                      Your settings
+                      {t("Your settings", "إعدادات حسابك")}
                     </h2>
                   </div>
                 </div>
@@ -1587,7 +1608,7 @@ export default function BoosterPage() {
                 <div className="booster-overview-list">
                   <div>
                     <span>
-                      Platform Fee
+                      {t("Platform Fee", "رسوم المنصة")}
                     </span>
 
                     <strong>
@@ -1601,7 +1622,7 @@ export default function BoosterPage() {
 
                   <div>
                     <span>
-                      Extra Penalty
+                      {t("Extra Penalty", "الخصم الإضافي")}
                     </span>
 
                     <strong>
@@ -1615,7 +1636,7 @@ export default function BoosterPage() {
 
                   <div>
                     <span>
-                      Orders
+                      {t("Orders", "الطلبات")}
                     </span>
 
                     <strong>
@@ -1626,7 +1647,7 @@ export default function BoosterPage() {
 
                   <div>
                     <span>
-                      Payments
+                      {t("Payments", "المدفوعات")}
                     </span>
 
                     <strong>
@@ -1641,11 +1662,11 @@ export default function BoosterPage() {
                 <div className="booster-panel-header">
                   <div>
                     <span className="booster-panel-kicker">
-                      ASSIGNMENTS
+                      {t("ASSIGNMENTS", "الطلبات المسندة")}
                     </span>
 
                     <h2>
-                      Active orders
+                      {t("Active orders", "الطلبات النشطة")}
                     </h2>
                   </div>
 
@@ -1658,7 +1679,7 @@ export default function BoosterPage() {
                       )
                     }
                   >
-                    View all →
+                    {t("View all →", "عرض الكل ←")}
                   </button>
                 </div>
 
@@ -1669,11 +1690,11 @@ export default function BoosterPage() {
 
                     <div>
                       <strong>
-                        No active orders
+                        {t("No active orders", "لا توجد طلبات نشطة")}
                       </strong>
 
                       <small>
-                        You're all caught up.
+                        {t("You're all caught up.", "أنت متابع كل شيء حاليًا.")}
                       </small>
                     </div>
                   </div>
@@ -1736,11 +1757,11 @@ export default function BoosterPage() {
               <div className="booster-panel-header">
                 <div>
                   <span className="booster-panel-kicker">
-                    RECENT ORDERS
+                    {t("RECENT ORDERS", "أحدث الطلبات")}
                   </span>
 
                   <h2>
-                    Latest assignments
+                    {t("Latest assignments", "أحدث الطلبات المسندة")}
                   </h2>
                 </div>
 
@@ -1751,7 +1772,7 @@ export default function BoosterPage() {
                     setActiveTab("orders")
                   }
                 >
-                  View all →
+                  {t("View all →", "عرض الكل ←")}
                 </button>
               </div>
 
