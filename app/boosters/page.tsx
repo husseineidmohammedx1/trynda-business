@@ -1,8 +1,38 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { useLanguage } from "@/app/language-provider";
+
+type BoosterOrderDetail = {
+  orderId: string;
+  title: string;
+  status: string;
+
+  originalUsd: number;
+  platformFeeUsd: number;
+  extraPenaltyUsd: number;
+  boosterAmountUsd: number;
+  finedUsd: number;
+  netAmountUsd: number;
+
+  exchangeRate: number;
+  originalEgp: number;
+  amountEgp: number;
+
+  paidAmountUsd: number;
+  paidExchangeRate: number | null;
+  paidAmountEgp: number | null;
+
+  paymentStatus: string;
+  completedAt: string | null;
+  releaseAt: string | null;
+  paidAt: string | null;
+
+  platformFeePercent: number;
+  extraPenaltyPercent: number;
+  createdAt: string;
+};
 
 type Booster = {
   id: string;
@@ -18,21 +48,19 @@ type Booster = {
   balanceUsd: number;
   totalEarnedUsd: number;
   totalPaidUsd: number;
+  totalPaidEgp: number;
+  paidExchangeRate: number | null;
 
   ordersCount: number;
   paymentsCount: number;
+  totalGrossUsd: number;
+  onHoldUsd: number;
+  finedUsd: number;
+  details: BoosterOrderDetail[];
 };
 
-function toSafeNumber(value: unknown) {
-  const amount = Number(value ?? 0);
-
-  return Number.isFinite(amount)
-    ? amount
-    : 0;
-}
-
-function formatMoney(value: unknown) {
-  const amount = toSafeNumber(value);
+function formatMoney(value: number) {
+  const amount = Number(value || 0);
 
   if (amount < 0) {
     return `-$${Math.abs(amount).toFixed(2)}`;
@@ -41,8 +69,52 @@ function formatMoney(value: unknown) {
   return `$${amount.toFixed(2)}`;
 }
 
+
+function formatEgp(value: number | null) {
+  if (value === null || !Number.isFinite(Number(value))) {
+    return "—";
+  }
+
+  return `${Number(value).toFixed(2)} EGP`;
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) {
+    return "—";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return date.toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getDetailAfterFeeLabel(detail: BoosterOrderDetail, isArabic: boolean) {
+  const fee = Number(detail.platformFeeUsd || 0);
+  const penalty = Number(detail.extraPenaltyUsd || 0);
+  const fine = Number(detail.finedUsd || 0);
+
+  if (fee > 0 || penalty > 0 || fine > 0) {
+    return isArabic ? "بعد الخصومات" : "After deductions";
+  }
+
+  return isArabic ? "بعد الرسوم" : "After fee";
+}
+
 export default function BoostersPage() {
   const { isArabic } = useLanguage();
+
+  const t = (en: string, ar: string) => (isArabic ? ar : en);
+
   const [boosters, setBoosters] = useState<Booster[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -88,11 +160,16 @@ export default function BoostersPage() {
   // =====================================================
 
   const [saving, setSaving] = useState(false);
+
+  const [expandedBooster, setExpandedBooster] = useState<string | null>(null);
   const [changingStatus, setChangingStatus] =
     useState<string | null>(null);
 
   const [deletingBooster, setDeletingBooster] =
     useState<string | null>(null);
+
+  const [exchangeRate, setExchangeRate] =
+    useState<number | null>(null);
 
   // =====================================================
   // LOAD BOOSTERS
@@ -121,32 +198,29 @@ export default function BoostersPage() {
 
       setBoosters(
         Array.isArray(data)
-          ? data.map((booster) => ({
-              ...booster,
-              platformFeePercent: toSafeNumber(
-                booster.platformFeePercent
-              ),
-              extraPenaltyPercent: toSafeNumber(
-                booster.extraPenaltyPercent
-              ),
-              balanceUsd: toSafeNumber(
-                booster.balanceUsd
-              ),
-              totalEarnedUsd: toSafeNumber(
-                booster.totalEarnedUsd
-              ),
-              totalPaidUsd: toSafeNumber(
-                booster.totalPaidUsd
-              ),
-              ordersCount: toSafeNumber(
-                booster.ordersCount
-              ),
-              paymentsCount: toSafeNumber(
-                booster.paymentsCount
-              ),
-            }))
+          ? data
           : []
       );
+
+      const exchangeResponse = await fetch(
+        "/api/exchange-rate",
+        { cache: "no-store" }
+      );
+
+      if (exchangeResponse.ok) {
+        const exchangeData =
+          (await exchangeResponse.json()) as {
+            rate?: number | string;
+          };
+
+        const rate = Number(exchangeData.rate);
+
+        setExchangeRate(
+          Number.isFinite(rate) && rate > 0
+            ? rate
+            : null
+        );
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -605,7 +679,9 @@ export default function BoostersPage() {
     boosters.reduce(
       (sum, booster) =>
         sum +
-        toSafeNumber(booster.ordersCount),
+        Number(
+          booster.ordersCount || 0
+        ),
       0
     );
 
@@ -623,7 +699,9 @@ export default function BoostersPage() {
     boosters.reduce(
       (sum, booster) =>
         sum +
-        toSafeNumber(booster.balanceUsd),
+        Number(
+          booster.balanceUsd || 0
+        ),
       0
     );
 
@@ -631,7 +709,10 @@ export default function BoostersPage() {
     boosters.reduce(
       (sum, booster) =>
         sum +
-        toSafeNumber(booster.totalEarnedUsd),
+        Number(
+          booster.totalEarnedUsd ||
+            0
+        ),
       0
     );
 
@@ -639,12 +720,36 @@ export default function BoostersPage() {
     boosters.reduce(
       (sum, booster) =>
         sum +
-        toSafeNumber(booster.totalPaidUsd),
+        Number(
+          booster.totalPaidUsd ||
+            0
+        ),
       0
     );
 
+  const totalPaidEgp =
+    boosters.reduce(
+      (sum, booster) =>
+        sum +
+        Number(
+          booster.totalPaidEgp ||
+            0
+        ),
+      0
+    );
+
+  const totalPaidExchangeRate =
+    totalPaid > 0 && totalPaidEgp > 0
+      ? totalPaidEgp / totalPaid
+      : null;
+
+  const totalBalanceEgp =
+    exchangeRate !== null
+      ? totalBalance * exchangeRate
+      : null;
+
   return (
-    <div className="shell">
+    <div className="shell boosters-page">
       {/* =================================================
           SIDEBAR
       ================================================= */}
@@ -669,26 +774,26 @@ export default function BoostersPage() {
 
         <nav>
           <Link href="/dashboard">
-            📊 {isArabic ? "لوحة التحكم" : "Dashboard"}
+            📊 {t("Dashboard", "لوحة التحكم")}
           </Link>
 
           <Link
             href="/boosters"
             className="active"
           >
-            👥 {isArabic ? "البوسترز" : "Boosters"}
+            👥 {t("Boosters", "البوسترز")}
           </Link>
 
           <Link href="/orders">
-            📦 {isArabic ? "الطلبات" : "Orders"}
+            📦 {t("Orders", "الطلبات")}
           </Link>
 
           <Link href="/payments">
-            💰 {isArabic ? "المدفوعات" : "Payments"}
+            💰 {t("Payments", "المدفوعات")}
           </Link>
 
           <Link href="/settings">
-            ⚙️ {isArabic ? "الإعدادات" : "Settings"}
+            ⚙️ {t("Settings", "الإعدادات")}
           </Link>
         </nav>
 
@@ -706,7 +811,7 @@ export default function BoostersPage() {
               "/login";
           }}
         >
-          🚪 تسجيل الخروج
+          🚪 {t("Logout", "تسجيل الخروج")}
         </button>
       </aside>
 
@@ -717,11 +822,13 @@ export default function BoostersPage() {
       <main className="content">
         <header>
           <div>
-            <h1>{isArabic ? "البوسترز" : "Boosters"}</h1>
+            <h1>{t("Boosters", "البوسترز")}</h1>
 
             <p>
-              Manage booster accounts,
-              balances and fee settings.
+              {t(
+                "Manage booster accounts, balances and fee settings.",
+                "إدارة حسابات البوسترز والأرصدة وإعدادات الرسوم."
+              )}
             </p>
           </div>
 
@@ -731,7 +838,7 @@ export default function BoostersPage() {
               openAddModal
             }
           >
-            + Add Booster
+            + {t("Add Booster", "إضافة بوستر")}
           </button>
         </header>
 
@@ -742,7 +849,7 @@ export default function BoostersPage() {
         <div className="stats">
           <div className="stat dashboard-stat">
             <span>
-              Total Boosters
+              {t("Total Boosters", "إجمالي البوسترز")}
             </span>
 
             <strong>
@@ -750,13 +857,13 @@ export default function BoostersPage() {
             </strong>
 
             <small>
-              All booster accounts
+              {t("All booster accounts", "جميع حسابات البوسترز")}
             </small>
           </div>
 
           <div className="stat dashboard-stat">
             <span>
-              Active Boosters
+              {t("Active Boosters", "البوسترز النشطون")}
             </span>
 
             <strong
@@ -769,13 +876,13 @@ export default function BoostersPage() {
             </strong>
 
             <small>
-              Currently active
+              {t("Currently active", "النشطون حاليًا")}
             </small>
           </div>
 
           <div className="stat dashboard-stat">
             <span>
-              Inactive Boosters
+              {t("Inactive Boosters", "البوسترز غير النشطين")}
             </span>
 
             <strong
@@ -791,13 +898,13 @@ export default function BoostersPage() {
             </strong>
 
             <small>
-              Disabled accounts
+              {t("Disabled accounts", "الحسابات المعطلة")}
             </small>
           </div>
 
           <div className="stat dashboard-stat">
             <span>
-              Total Orders
+              {t("Total Orders", "إجمالي الطلبات")}
             </span>
 
             <strong>
@@ -805,7 +912,7 @@ export default function BoostersPage() {
             </strong>
 
             <small>
-              Assigned orders
+              {t("Assigned orders", "الطلبات المسندة")}
             </small>
           </div>
         </div>
@@ -817,7 +924,7 @@ export default function BoostersPage() {
         <div className="stats">
           <div className="stat">
             <span>
-              Current Balance
+              {t("Current Balance", "الرصيد الحالي")}
             </span>
 
             <strong
@@ -834,14 +941,26 @@ export default function BoostersPage() {
               )}
             </strong>
 
+            <span className="payment-balance-egp-label">
+              {exchangeRate !== null
+                ? `${t("Current USD rate", "سعر الدولار الحالي")}: ${exchangeRate.toFixed(4)} EGP`
+                : t("Current USD rate: loading...", "سعر الدولار الحالي: جاري التحميل...")}
+            </span>
+
+            <strong className="payment-balance-egp">
+              {exchangeRate !== null
+                ? formatEgp(totalBalanceEgp)
+                : "—"}
+            </strong>
+
             <small>
-              Current available balance
+              {t("Current available balance", "الرصيد المتاح حاليًا")}
             </small>
           </div>
 
           <div className="stat">
             <span>
-              Total Earned
+              {t("Total Earned", "إجمالي الأرباح")}
             </span>
 
             <strong>
@@ -851,13 +970,13 @@ export default function BoostersPage() {
             </strong>
 
             <small>
-              Lifetime booster earnings
+              {t("Lifetime booster earnings", "إجمالي أرباح البوسترز منذ البداية")}
             </small>
           </div>
 
           <div className="stat">
             <span>
-              Total Paid
+              {t("Total Paid", "إجمالي المدفوع")}
             </span>
 
             <strong>
@@ -866,8 +985,20 @@ export default function BoostersPage() {
               )}
             </strong>
 
+            <span className="payment-balance-egp-label">
+              {totalPaidExchangeRate !== null
+                ? `${t("Effective paid USD rate", "سعر الدولار الفعلي وقت الدفع")}: ${totalPaidExchangeRate.toFixed(4)} EGP`
+                : t("Historical payment rate", "سعر الصرف التاريخي للمدفوعات")}
+            </span>
+
+            <strong className="payment-balance-egp">
+              {totalPaidEgp > 0
+                ? formatEgp(totalPaidEgp)
+                : "—"}
+            </strong>
+
             <small>
-              Lifetime payments
+              {t("Fixed from payment-time exchange rates", "ثابت حسب أسعار الصرف وقت الدفع")}
             </small>
           </div>
         </div>
@@ -900,12 +1031,14 @@ export default function BoostersPage() {
           >
             <div>
               <h2>
-                All Boosters
+                {t("All Boosters", "كل البوسترز")}
               </h2>
 
               <p>
-                Manage accounts,
-                percentages and access.
+                {t(
+                  "Manage accounts, percentages and access.",
+                  "إدارة الحسابات والنسب والصلاحيات."
+                )}
               </p>
             </div>
 
@@ -937,7 +1070,7 @@ export default function BoostersPage() {
 
           {loading ? (
             <div className="empty">
-              Loading boosters...
+              {t("Loading boosters...", "جارٍ تحميل البوسترز...")}
             </div>
           ) : boosters.length ===
             0 ? (
@@ -947,12 +1080,14 @@ export default function BoostersPage() {
               </div>
 
               <h3>
-                No boosters yet
+                {t("No boosters yet", "لا يوجد بوسترز حتى الآن")}
               </h3>
 
               <p>
-                Add your first booster
-                to get started.
+                {t(
+                  "Add your first booster to get started.",
+                  "أضف أول بوستر للبدء."
+                )}
               </p>
 
               <button
@@ -962,7 +1097,7 @@ export default function BoostersPage() {
                   openAddModal
                 }
               >
-                Add Booster
+                {t("Add Booster", "إضافة بوستر")}
               </button>
             </div>
           ) : (
@@ -976,7 +1111,7 @@ export default function BoostersPage() {
                 style={{
                   width: "100%",
                   minWidth:
-                    "1350px",
+                    "1380px",
                   borderCollapse:
                     "collapse",
                 }}
@@ -989,7 +1124,7 @@ export default function BoostersPage() {
                           "15px 14px",
                       }}
                     >
-                      Booster
+                      {t("Booster", "البوستر")}
                     </th>
 
                     <th
@@ -998,7 +1133,7 @@ export default function BoostersPage() {
                           "15px 14px",
                       }}
                     >
-                      Orders
+                      {t("Orders", "الطلبات")}
                     </th>
 
                     <th
@@ -1007,7 +1142,7 @@ export default function BoostersPage() {
                           "15px 14px",
                       }}
                     >
-                      Platform Fee
+                      {t("Platform Fee", "رسوم المنصة")}
                     </th>
 
                     <th
@@ -1016,7 +1151,7 @@ export default function BoostersPage() {
                           "15px 14px",
                       }}
                     >
-                      Extra Penalty
+                      {t("Extra Penalty", "الخصم الإضافي")}
                     </th>
 
                     <th
@@ -1025,7 +1160,7 @@ export default function BoostersPage() {
                           "15px 14px",
                       }}
                     >
-                      Balance
+                      {t("Balance", "الرصيد")}
                     </th>
 
                     <th
@@ -1034,7 +1169,7 @@ export default function BoostersPage() {
                           "15px 14px",
                       }}
                     >
-                      Total Earned
+                      {t("Total Earned", "إجمالي الأرباح")}
                     </th>
 
                     <th
@@ -1043,7 +1178,7 @@ export default function BoostersPage() {
                           "15px 14px",
                       }}
                     >
-                      Total Paid
+                      {t("Total Paid", "إجمالي المدفوع")}
                     </th>
 
                     <th
@@ -1052,7 +1187,7 @@ export default function BoostersPage() {
                           "15px 14px",
                       }}
                     >
-                      Status
+                      {t("Status", "الحالة")}
                     </th>
 
                     <th
@@ -1063,7 +1198,7 @@ export default function BoostersPage() {
                           "280px",
                       }}
                     >
-                      Actions
+                      {t("Actions", "الإجراءات")}
                     </th>
                   </tr>
                 </thead>
@@ -1083,7 +1218,11 @@ export default function BoostersPage() {
                         deletingBooster ===
                         booster.id;
 
+                      const expanded =
+                        expandedBooster === booster.id;
+
                       return (
+                        <Fragment>
                         <tr
                           key={
                             booster.id
@@ -1099,27 +1238,71 @@ export default function BoostersPage() {
                                 "1px solid #202a42",
                             }}
                           >
-                            <div className="admin-booster-identity">
-                              <div
-                                className={
-                                  booster.profileImageUrl
-                                    ? "admin-booster-avatar has-image"
-                                    : "admin-booster-avatar"
-                                }
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedBooster(
+                                  expanded ? null : booster.id
+                                )
+                              }
+                              aria-expanded={expanded}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "12px",
+                                width: "100%",
+                                minWidth: 0,
+                                padding: 0,
+                                border: "none",
+                                background: "transparent",
+                                color: "inherit",
+                                textAlign: "left",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <span
+                                aria-hidden="true"
+                                style={{
+                                  width: "44px",
+                                  height: "44px",
+                                  minWidth: "44px",
+                                  borderRadius: "12px",
+                                  overflow: "hidden",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  background: "linear-gradient(135deg, #1d2842 0%, #111827 100%)",
+                                  border: "1px solid rgba(148,163,184,0.18)",
+                                  color: "#c4bfff",
+                                  fontSize: "16px",
+                                  fontWeight: 800,
+                                  flexShrink: 0,
+                                }}
                               >
                                 {booster.profileImageUrl ? (
                                   <img
                                     src={booster.profileImageUrl}
-                                    alt=""
+                                    alt={`${booster.name} profile`}
+                                    loading="lazy"
+                                    style={{
+                                      width: "100%",
+                                      height: "100%",
+                                      objectFit: "cover",
+                                      display: "block",
+                                    }}
                                   />
                                 ) : (
                                   booster.name
                                     .charAt(0)
                                     .toUpperCase()
                                 )}
-                              </div>
+                              </span>
 
-                              <div>
+                              <div
+                                style={{
+                                  minWidth: 0,
+                                }}
+                              >
                                 <strong>
                                   {booster.name}
                                 </strong>
@@ -1131,12 +1314,31 @@ export default function BoostersPage() {
                                       "12px",
                                     marginTop:
                                       "5px",
+                                    overflow: "hidden",
+                                    textOverflow:
+                                      "ellipsis",
                                   }}
                                 >
                                   {booster.email}
                                 </div>
                               </div>
-                            </div>
+
+                              <span
+                                aria-hidden="true"
+                                style={{
+                                  marginLeft: "auto",
+                                  color: "#8995ab",
+                                  fontSize: "16px",
+                                  lineHeight: 1,
+                                  transform: expanded
+                                    ? "rotate(180deg)"
+                                    : "rotate(0deg)",
+                                  transition: "transform 160ms ease",
+                                }}
+                              >
+                                ⌄
+                              </span>
+                            </button>
                           </td>
 
                           {/* ORDERS */}
@@ -1187,7 +1389,7 @@ export default function BoostersPage() {
                                   "4px",
                               }}
                             >
-                              Default fee
+                              {t("Default fee", "الرسوم الافتراضية")}
                             </div>
                           </td>
 
@@ -1225,7 +1427,7 @@ export default function BoostersPage() {
                                   "4px",
                               }}
                             >
-                              Additional
+                              {t("Additional", "إضافي")}
                             </div>
                           </td>
 
@@ -1255,6 +1457,25 @@ export default function BoostersPage() {
                               )}
                             </strong>
 
+                            <div className="payment-row-egp">
+                              {exchangeRate !== null
+                                ? formatEgp(booster.balanceUsd * exchangeRate)
+                                : "—"}
+                            </div>
+
+                            <small
+                              className="muted"
+                              style={{
+                                display: "block",
+                                marginTop: "3px",
+                                fontSize: "10px",
+                              }}
+                            >
+                              {exchangeRate !== null
+                                ? `${t("Current rate", "السعر الحالي")}: ${exchangeRate.toFixed(4)} EGP`
+                                : t("Current rate: loading...", "السعر الحالي: جاري التحميل...")}
+                            </small>
+
                             {hasDebt && (
                               <div
                                 style={{
@@ -1268,7 +1489,7 @@ export default function BoostersPage() {
                                     600,
                                 }}
                               >
-                                Owes money
+                                {t("Owes money", "عليه مبلغ مستحق")}
                               </div>
                             )}
                           </td>
@@ -1305,6 +1526,25 @@ export default function BoostersPage() {
                                 booster.totalPaidUsd
                               )}
                             </strong>
+
+                            {booster.totalPaidEgp > 0 && (
+                              <div className="payment-row-egp">
+                                {formatEgp(booster.totalPaidEgp)}
+                              </div>
+                            )}
+
+                            {booster.paidExchangeRate !== null && (
+                              <small
+                                className="muted"
+                                style={{
+                                  display: "block",
+                                  marginTop: "3px",
+                                  fontSize: "10px",
+                                }}
+                              >
+                                {`${t("Paid rate", "سعر الدفع")}: ${booster.paidExchangeRate.toFixed(4)} EGP`}
+                              </small>
+                            )}
                           </td>
 
                           {/* STATUS */}
@@ -1399,7 +1639,7 @@ export default function BoostersPage() {
                                     "pointer",
                                 }}
                               >
-                                Edit
+                                {t("Edit", "تعديل")}
                               </button>
 
                               <button
@@ -1428,7 +1668,7 @@ export default function BoostersPage() {
                                     "pointer",
                                 }}
                               >
-                                Password
+                                {t("Password", "كلمة المرور")}
                               </button>
 
                               <button
@@ -1475,8 +1715,8 @@ export default function BoostersPage() {
                                 {isChanging
                                   ? "..."
                                   : booster.active
-                                  ? "Disable"
-                                  : "Enable"}
+                                  ? t("Disable", "تعطيل")
+                                  : t("Enable", "تفعيل")}
                               </button>
 
                               <button
@@ -1515,12 +1755,245 @@ export default function BoostersPage() {
                                 }}
                               >
                                 {isDeleting
-                                  ? "Deleting..."
-                                  : "Delete"}
+                                  ? t("Deleting...", "جارٍ الحذف...")
+                                  : t("Delete", "حذف")}
                               </button>
                             </div>
                           </td>
                         </tr>
+
+                        {expanded && (
+                          <tr>
+                            <td
+                              colSpan={9}
+                              style={{
+                                padding: 0,
+                                borderTop: "1px solid rgba(117,104,255,0.14)",
+                                background: "rgba(117,104,255,0.025)",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  padding: "16px 14px 18px",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    gap: "12px",
+                                    marginBottom: "12px",
+                                    flexWrap: "wrap",
+                                  }}
+                                >
+                                  <div>
+                                    <strong
+                                      style={{
+                                        color: "#f8fafc",
+                                        fontSize: "14px",
+                                      }}
+                                    >
+                                      {booster.name} — {t("Order history", "سجل الطلبات")}
+                                    </strong>
+                                    <div
+                                      className="muted"
+                                      style={{
+                                        marginTop: "4px",
+                                        fontSize: "11px",
+                                      }}
+                                    >
+                                      {t(
+                                        "Before vs. after deductions, plus the historical USD → EGP rate for each order.",
+                                        "مقارنة المبلغ قبل وبعد الخصومات، مع سعر تحويل الدولار إلى الجنيه وقت كل طلب."
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      gap: "8px",
+                                      flexWrap: "wrap",
+                                    }}
+                                  >
+                                    <span className="ui-chip">
+                                      {t("Gross", "الإجمالي")} {formatMoney(booster.totalGrossUsd)}
+                                    </span>
+                                    <span className="ui-chip ui-chip--success">
+                                      {t("Earned", "الأرباح")} {formatMoney(booster.totalEarnedUsd)}
+                                    </span>
+                                    {booster.finedUsd > 0 && (
+                                      <span className="ui-chip ui-chip--danger">
+                                        {t("Fined", "الخصومات")} {formatMoney(booster.finedUsd)}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {booster.details.length === 0 ? (
+                                  <div className="empty" style={{ minHeight: 120 }}>
+                                    {t("No order history found for this booster.", "لا يوجد سجل طلبات لهذا البوستر.")}
+                                  </div>
+                                ) : (
+                                  <div
+                                    style={{
+                                      overflowX: "auto",
+                                      border: "1px solid rgba(148,163,184,0.10)",
+                                      borderRadius: "12px",
+                                    }}
+                                  >
+                                    <table
+                                      style={{
+                                        width: "100%",
+                                        minWidth: "1500px",
+                                        borderCollapse: "collapse",
+                                      }}
+                                    >
+                                      <thead>
+                                        <tr>
+                                          <th>{t("Order", "الطلب")}</th>
+                                          <th>{t("Status", "الحالة")}</th>
+                                          <th>{t("Before ($)", "قبل ($)")}</th>
+                                          <th>{t("Platform Fee", "رسوم المنصة")}</th>
+                                          <th>{t("Extra / Fine", "إضافي / غرامة")}</th>
+                                          <th>{t("After ($)", "بعد ($)")}</th>
+                                          <th>{t("Rate", "السعر")}</th>
+                                          <th>{t("Before (EGP)", "قبل (جنيه)")}</th>
+                                          <th>{t("After (EGP)", "بعد (جنيه)")}</th>
+                                          <th>{t("Paid ($)", "المدفوع ($)")}</th>
+                                          <th>{t("Paid (EGP)", "المدفوع (جنيه)")}</th>
+                                          <th>{t("Completed", "مكتمل")}</th>
+                                        </tr>
+                                      </thead>
+
+                                      <tbody>
+                                        {booster.details.map((detail) => {
+                                          const status = String(detail.status || "").toUpperCase();
+                                          const paymentStatus = String(detail.paymentStatus || "").toUpperCase();
+                                          const statusText = paymentStatus === "PAID"
+                                            ? t("PAID", "مدفوع")
+                                            : status === "COMPLETED"
+                                            ? t("COMPLETED", "مكتمل")
+                                            : status === "IN_PROGRESS"
+                                            ? t("IN_PROGRESS", "قيد التنفيذ")
+                                            : status === "CANCELLED"
+                                            ? t("CANCELLED", "ملغي")
+                                            : status || paymentStatus || "—";
+
+                                          const afterLabel = getDetailAfterFeeLabel(detail, isArabic);
+
+                                          return (
+                                            <tr key={detail.orderId}>
+                                              <td
+                                                style={{
+                                                  padding: "13px 10px",
+                                                  verticalAlign: "top",
+                                                  minWidth: "260px",
+                                                }}
+                                              >
+                                                <strong
+                                                  style={{
+                                                    display: "block",
+                                                    color: "#f3f5ff",
+                                                    maxWidth: "360px",
+                                                  }}
+                                                >
+                                                  {detail.title || detail.orderId}
+                                                </strong>
+                                                <small
+                                                  className="muted"
+                                                  style={{
+                                                    display: "block",
+                                                    marginTop: "5px",
+                                                  }}
+                                                >
+                                                  {detail.orderId}
+                                                </small>
+                                              </td>
+
+                                              <td style={{ padding: "13px 10px", verticalAlign: "top" }}>
+                                                <span className="ui-chip">
+                                                  {statusText}
+                                                </span>
+                                              </td>
+
+                                              <td style={{ padding: "13px 10px", verticalAlign: "top" }}>
+                                                <strong>{formatMoney(detail.originalUsd)}</strong>
+                                              </td>
+
+                                              <td style={{ padding: "13px 10px", verticalAlign: "top" }}>
+                                                <span style={{ color: "#fcd34d" }}>
+                                                  -{formatMoney(detail.platformFeeUsd)}
+                                                </span>
+                                                <small className="muted" style={{ display: "block", marginTop: "4px" }}>
+                                                  {detail.platformFeePercent.toFixed(2)}%
+                                                </small>
+                                              </td>
+
+                                              <td style={{ padding: "13px 10px", verticalAlign: "top" }}>
+                                                <span style={{ color: detail.finedUsd + detail.extraPenaltyUsd > 0 ? "#fca5a5" : "#8995ab" }}>
+                                                  -{formatMoney(detail.extraPenaltyUsd + detail.finedUsd)}
+                                                </span>
+                                                <small className="muted" style={{ display: "block", marginTop: "4px" }}>
+                                                  {afterLabel}
+                                                </small>
+                                              </td>
+
+                                              <td style={{ padding: "13px 10px", verticalAlign: "top" }}>
+                                                <strong style={{ color: "#6ee7b7" }}>
+                                                  {formatMoney(detail.netAmountUsd)}
+                                                </strong>
+                                                <small className="muted" style={{ display: "block", marginTop: "4px" }}>
+                                                  {t("booster earnings", "أرباح البوستر")}
+                                                </small>
+                                              </td>
+
+                                              <td style={{ padding: "13px 10px", verticalAlign: "top" }}>
+                                                <strong>{detail.exchangeRate.toFixed(4)}</strong>
+                                                <small className="muted" style={{ display: "block", marginTop: "4px" }}>
+                                                  EGP / USD
+                                                </small>
+                                              </td>
+
+                                              <td style={{ padding: "13px 10px", verticalAlign: "top" }}>
+                                                <strong>{formatEgp(detail.originalEgp)}</strong>
+                                              </td>
+
+                                              <td style={{ padding: "13px 10px", verticalAlign: "top" }}>
+                                                <strong style={{ color: "#6ee7b7" }}>
+                                                  {formatEgp(detail.amountEgp)}
+                                                </strong>
+                                              </td>
+
+                                              <td style={{ padding: "13px 10px", verticalAlign: "top" }}>
+                                                {formatMoney(detail.paidAmountUsd)}
+                                              </td>
+
+                                              <td style={{ padding: "13px 10px", verticalAlign: "top" }}>
+                                                {formatEgp(detail.paidAmountEgp)}
+                                                {detail.paidExchangeRate !== null && (
+                                                  <small className="muted" style={{ display: "block", marginTop: "4px" }}>
+                                                    @ {detail.paidExchangeRate.toFixed(4)}
+                                                  </small>
+                                                )}
+                                              </td>
+
+                                              <td style={{ padding: "13px 10px", verticalAlign: "top", whiteSpace: "nowrap" }}>
+                                                {formatDate(detail.completedAt || detail.createdAt)}
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        </Fragment>
                       );
                     }
                   )}
@@ -1580,7 +2053,7 @@ export default function BoostersPage() {
                   "0 0 6px",
               }}
             >
-              Add Booster
+              {t("Add Booster", "إضافة بوستر")}
             </h2>
 
             <p
@@ -1591,9 +2064,10 @@ export default function BoostersPage() {
                   "24px",
               }}
             >
-              Create a booster account
-              and define its default
-              fee settings.
+              {t(
+                "Create a booster account and define its default fee settings.",
+                "أنشئ حساب بوستر وحدد إعدادات الرسوم الافتراضية."
+              )}
             </p>
 
             <form
@@ -1608,7 +2082,7 @@ export default function BoostersPage() {
             >
               <label className="login-form">
                 <span>
-                  Name
+                  {t("Name", "الاسم")}
                 </span>
 
                 <input
@@ -1627,7 +2101,7 @@ export default function BoostersPage() {
 
               <label className="login-form">
                 <span>
-                  Email
+                  {t("Email", "البريد الإلكتروني")}
                 </span>
 
                 <input
@@ -1648,7 +2122,7 @@ export default function BoostersPage() {
 
               <label className="login-form">
                 <span>
-                  Password
+                  {t("Password", "كلمة المرور")}
                 </span>
 
                 <input
@@ -1661,7 +2135,7 @@ export default function BoostersPage() {
                       event.target.value
                     )
                   }
-                  placeholder="Minimum 8 characters"
+                  placeholder={t("Minimum 8 characters", "8 أحرف على الأقل")}
                   minLength={8}
                   autoComplete="new-password"
                   required
@@ -1680,7 +2154,7 @@ export default function BoostersPage() {
               >
                 <label className="login-form">
                   <span>
-                    Platform Fee %
+                    {t("Platform Fee %", "رسوم المنصة %")}
                   </span>
 
                   <input
@@ -1704,7 +2178,7 @@ export default function BoostersPage() {
 
                 <label className="login-form">
                   <span>
-                    Extra Penalty %
+                    {t("Extra Penalty %", "الخصم الإضافي %")}
                   </span>
 
                   <input
@@ -1766,7 +2240,7 @@ export default function BoostersPage() {
                       "#eef2ff",
                   }}
                 >
-                  Cancel
+                  {t("Cancel", "إلغاء")}
                 </button>
 
                 <button
@@ -1838,7 +2312,7 @@ export default function BoostersPage() {
                   "0 0 6px",
               }}
             >
-              Edit Booster
+              {t("Edit Booster", "تعديل البوستر")}
             </h2>
 
             <p
@@ -1849,8 +2323,10 @@ export default function BoostersPage() {
                   "24px",
               }}
             >
-              Update account information
-              and default fee settings.
+              {t(
+                "Update account information and default fee settings.",
+                "تحديث بيانات الحساب وإعدادات الرسوم الافتراضية."
+              )}
             </p>
 
             <form
@@ -1865,7 +2341,7 @@ export default function BoostersPage() {
             >
               <label className="login-form">
                 <span>
-                  Name
+                  {t("Name", "الاسم")}
                 </span>
 
                 <input
@@ -1885,7 +2361,7 @@ export default function BoostersPage() {
 
               <label className="login-form">
                 <span>
-                  Email
+                  {t("Email", "البريد الإلكتروني")}
                 </span>
 
                 <input
@@ -1917,7 +2393,7 @@ export default function BoostersPage() {
               >
                 <label className="login-form">
                   <span>
-                    Platform Fee %
+                    {t("Platform Fee %", "رسوم المنصة %")}
                   </span>
 
                   <input
@@ -1941,7 +2417,7 @@ export default function BoostersPage() {
 
                 <label className="login-form">
                   <span>
-                    Extra Penalty %
+                    {t("Extra Penalty %", "الخصم الإضافي %")}
                   </span>
 
                   <input
@@ -2001,7 +2477,7 @@ export default function BoostersPage() {
                       "#eef2ff",
                   }}
                 >
-                  Cancel
+                  {t("Cancel", "إلغاء")}
                 </button>
 
                 <button
@@ -2015,8 +2491,8 @@ export default function BoostersPage() {
                   }}
                 >
                   {saving
-                    ? "Saving..."
-                    : "Save Changes"}
+                    ? t("Saving...", "جارٍ الحفظ...")
+                    : t("Save Changes", "حفظ التغييرات")}
                 </button>
               </div>
             </form>
@@ -2072,7 +2548,7 @@ export default function BoostersPage() {
                   "0 0 6px",
               }}
             >
-              Change Password
+              {t("Change Password", "تغيير كلمة المرور")}
             </h2>
 
             <p
@@ -2083,7 +2559,7 @@ export default function BoostersPage() {
                   "24px",
               }}
             >
-              Change the password for{" "}
+              {t("Change the password for", "تغيير كلمة المرور لـ")} {" "}
               <strong
                 style={{
                   color:
@@ -2109,7 +2585,7 @@ export default function BoostersPage() {
             >
               <label className="login-form">
                 <span>
-                  New Password
+                  {t("New Password", "كلمة المرور الجديدة")}
                 </span>
 
                 <input
@@ -2124,7 +2600,7 @@ export default function BoostersPage() {
                       event.target.value
                     )
                   }
-                  placeholder="Minimum 8 characters"
+                  placeholder={t("Minimum 8 characters", "8 أحرف على الأقل")}
                   minLength={8}
                   autoComplete="new-password"
                   required
@@ -2168,7 +2644,7 @@ export default function BoostersPage() {
                       "#eef2ff",
                   }}
                 >
-                  Cancel
+                  {t("Cancel", "إلغاء")}
                 </button>
 
                 <button
@@ -2182,8 +2658,8 @@ export default function BoostersPage() {
                   }}
                 >
                   {saving
-                    ? "Changing..."
-                    : "Change Password"}
+                    ? t("Changing...", "جارٍ التغيير...")
+                    : t("Change Password", "تغيير كلمة المرور")}
                 </button>
               </div>
             </form>

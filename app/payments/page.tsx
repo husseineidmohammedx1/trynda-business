@@ -144,6 +144,35 @@ function formatEgp(value: number | null) {
   return `${value.toFixed(2)} EGP`;
 }
 
+function buildPaidHistoryMap(
+  transactions: PaymentHistoryItem[]
+) {
+  const map = new Map<
+    string,
+    { usd: number; egp: number; rate: number | null }
+  >();
+
+  for (const transaction of transactions) {
+    const current =
+      map.get(transaction.boosterId) ?? {
+        usd: 0,
+        egp: 0,
+        rate: null,
+      };
+
+    current.usd += Number(transaction.amountUsd || 0);
+    current.egp += Number(transaction.amountEgp || 0);
+    current.rate =
+      current.usd > 0 && current.egp > 0
+        ? current.egp / current.usd
+        : null;
+
+    map.set(transaction.boosterId, current);
+  }
+
+  return map;
+}
+
 function formatDate(
   value: string | null | undefined
 ) {
@@ -408,9 +437,33 @@ const [payPaymentNumber, setPayPaymentNumber] =
       ? totals.onHoldUsd * exchangeRate
       : null;
 
+  const paidHistoryMap = buildPaidHistoryMap(
+    paymentHistory
+  );
+
   const totalPaidEgp =
-    exchangeRate !== null && totals
-      ? totals.paidUsd * exchangeRate
+    paymentHistory.length > 0
+      ? paymentHistory.reduce(
+          (sum, transaction) =>
+            sum + Number(transaction.amountEgp || 0),
+          0
+        )
+      : null;
+
+  const totalPaidHistoryUsd =
+    paymentHistory.length > 0
+      ? paymentHistory.reduce(
+          (sum, transaction) =>
+            sum + Number(transaction.amountUsd || 0),
+          0
+        )
+      : 0;
+
+  const totalPaidExchangeRate =
+    totalPaidHistoryUsd > 0 &&
+    totalPaidEgp !== null &&
+    totalPaidEgp > 0
+      ? totalPaidEgp / totalPaidHistoryUsd
       : null;
 
   // =====================================================
@@ -946,7 +999,9 @@ await loadPayments();
             </strong>
 
             <span className="payment-balance-egp-label">
-              السعر بالجنية المصري المستحق
+              {isArabic
+                ? `سعر الدولار الحالي: ${exchangeRate !== null ? exchangeRate.toFixed(4) : "—"} EGP`
+                : `Current USD rate: ${exchangeRate !== null ? exchangeRate.toFixed(4) : "—"} EGP`}
             </span>
 
             <strong className="payment-balance-egp">
@@ -973,7 +1028,9 @@ await loadPayments();
             </strong>
 
             <span className="payment-balance-egp-label">
-              السعر بالجنية المصري المستحق
+              {isArabic
+                ? `سعر الدولار الحالي: ${exchangeRate !== null ? exchangeRate.toFixed(4) : "—"} EGP`
+                : `Current USD rate: ${exchangeRate !== null ? exchangeRate.toFixed(4) : "—"} EGP`}
             </span>
 
             <strong className="payment-balance-egp">
@@ -1014,7 +1071,13 @@ await loadPayments();
             </strong>
 
             <span className="payment-balance-egp-label">
-              السعر بالجنية المصري المستحق
+              {totalPaidExchangeRate !== null
+                ? isArabic
+                  ? `سعر الدولار الفعلي وقت الدفع: ${totalPaidExchangeRate.toFixed(4)} EGP`
+                  : `Effective paid USD rate: ${totalPaidExchangeRate.toFixed(4)} EGP`
+                : isArabic
+                ? "سعر الصرف التاريخي للمدفوعات"
+                : "Historical payment exchange rate"}
             </span>
 
             <strong className="payment-balance-egp">
@@ -1022,7 +1085,9 @@ await loadPayments();
             </strong>
 
             <small>
-              Paid this month
+              {isArabic
+                ? "ثابت حسب أسعار الصرف وقت الدفع"
+                : "Fixed from payment-time exchange rates"}
             </small>
           </div>
         </div>
@@ -1350,6 +1415,21 @@ await loadPayments();
                                 )}
                               </div>
 
+                              <small
+                                className="muted"
+                                style={{
+                                  display: "block",
+                                  marginTop: "3px",
+                                  fontSize: "10px",
+                                }}
+                              >
+                                {exchangeRate !== null
+                                  ? isArabic
+                                    ? `السعر الحالي: ${exchangeRate.toFixed(4)} EGP`
+                                    : `Current rate: ${exchangeRate.toFixed(4)} EGP`
+                                  : "—"}
+                              </small>
+
                               {hasDebt && (
                                 <div
                                   style={{
@@ -1422,12 +1502,25 @@ await loadPayments();
 
                               <div className="payment-row-egp">
                                 {formatEgp(
-                                  exchangeRate === null
-                                    ? null
-                                    : payment.paidUsd *
-                                      exchangeRate
+                                  paidHistoryMap.get(payment.id)?.egp ?? null
                                 )}
                               </div>
+
+                              {paidHistoryMap.get(payment.id)?.rate !== null &&
+                                paidHistoryMap.get(payment.id)?.rate !== undefined && (
+                                  <small
+                                    className="muted"
+                                    style={{
+                                      display: "block",
+                                      marginTop: "3px",
+                                      fontSize: "10px",
+                                    }}
+                                  >
+                                    {isArabic
+                                      ? `سعر الدفع: ${paidHistoryMap.get(payment.id)!.rate!.toFixed(4)} EGP`
+                                      : `Paid rate: ${paidHistoryMap.get(payment.id)!.rate!.toFixed(4)} EGP`}
+                                  </small>
+                                )}
                             </td>
 
                             {/* EXPECTED PAYABLE */}
