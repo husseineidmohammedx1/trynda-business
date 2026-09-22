@@ -51,7 +51,6 @@ type StatCardProps = {
   value: string | number;
   description: string;
   tone?: "danger" | "primary" | "success";
-  dashboard?: boolean;
 };
 
 type SectionHeaderProps = {
@@ -72,11 +71,11 @@ const EMPTY_STATS: Stats = {
 };
 
 const NAVIGATION_ITEMS = [
-  { href: "/dashboard", icon: "◈", label: "Dashboard" },
-  { href: "/boosters", icon: "♟", label: "Boosters" },
-  { href: "/orders", icon: "▣", label: "Orders" },
-  { href: "/payments", icon: "◇", label: "Payments" },
-  { href: "/settings", icon: "⚙", label: "Settings" },
+  { href: "/dashboard", icon: "📊", label: "Dashboard" },
+  { href: "/boosters", icon: "👥", label: "Boosters" },
+  { href: "/orders", icon: "📦", label: "Orders" },
+  { href: "/payments", icon: "💰", label: "Payments" },
+  { href: "/settings", icon: "⚙️", label: "Settings" },
 ];
 
 const STATUS_CONFIG: Record<string, StatusConfig> = {
@@ -104,11 +103,11 @@ function toNumber(value: unknown) {
 }
 
 function formatUsd(value: number) {
-  return "$" + value.toFixed(2);
+  return "$" + Number(value || 0).toFixed(2);
 }
 
 function formatEgp(value: number) {
-  return value.toFixed(2) + " EGP";
+  return Number(value || 0).toFixed(2) + " EGP";
 }
 
 function getStats(data: DashboardResponse): Stats {
@@ -123,22 +122,22 @@ function getStats(data: DashboardResponse): Stats {
 }
 
 function getOrderValues(order: RecentOrder) {
-  const price = Number(order.priceUsd);
+  const price = Number(order.priceUsd || 0);
   const platformFee = Number(
     order.platformFeeUsd || price * (PLATFORM_FEE_PERCENT / 100)
   );
-
   const boosterAmount = Number(
     order.boosterAmountUsd || price - platformFee
   );
-
-  const egp = boosterAmount * Number(order.exchangeRate || 0);
+  const exchangeRate = Number(order.exchangeRate || 0);
+  const egp = boosterAmount * exchangeRate;
 
   return {
     boosterAmount,
     egp,
     platformFee,
     price,
+    exchangeRate,
   };
 }
 
@@ -152,30 +151,21 @@ function StatCard({
   value,
   description,
   tone,
-  dashboard = false,
 }: StatCardProps) {
-  const valueClassName = tone
-    ? "dashboard-stat-value dashboard-stat-value--" + tone
-    : "dashboard-stat-value";
-
-  const cardClassName = dashboard
-    ? "stat dashboard-stat dashboard-stat--premium"
-    : "stat dashboard-breakdown-card";
+  const valueClassName =
+    tone
+      ? `dashboard-stat-value dashboard-stat-value--${tone}`
+      : "dashboard-stat-value";
 
   return (
-    <div className={cardClassName}>
-      <div className="dashboard-stat-top">
-        <div className="stat-icon dashboard-stat-icon">{icon}</div>
+    <div className="stat">
+      <div className="stat-icon">{icon}</div>
 
-        <span className="dashboard-stat-label">{label}</span>
-      </div>
+      <span>{label}</span>
 
       <strong className={valueClassName}>{value}</strong>
 
-      <div className="dashboard-stat-description">
-        <span className="dashboard-stat-dot" />
-        {description}
-      </div>
+      <small>{description}</small>
     </div>
   );
 }
@@ -186,12 +176,9 @@ function SectionHeader({
   action,
 }: SectionHeaderProps) {
   return (
-    <div className="section-header dashboard-section-header">
+    <div className="section-header">
       <div>
-        <div className="dashboard-section-title-row">
-          <h2>{title}</h2>
-        </div>
-
+        <h2>{title}</h2>
         <p className="muted">{description}</p>
       </div>
 
@@ -200,105 +187,195 @@ function SectionHeader({
   );
 }
 
-function RecentOrderRow({ order }: { order: RecentOrder }) {
-  const { boosterAmount, egp, platformFee, price } =
-    getOrderValues(order);
+function RecentOrderRow({
+  order,
+}: {
+  order: RecentOrder;
+}) {
+  const {
+    boosterAmount,
+    egp,
+    platformFee,
+    price,
+    exchangeRate,
+  } = getOrderValues(order);
 
   const status = getStatusConfig(order.status);
 
   return (
     <tr>
-      <td data-label="Order">
-        <div className="dashboard-order-main">
-          <div className="dashboard-order-icon">▣</div>
+      <td>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "11px",
+            minWidth: 0,
+          }}
+        >
+          <span
+            style={{
+              display: "grid",
+              flex: "0 0 auto",
+              width: "38px",
+              height: "38px",
+              borderRadius: "10px",
+              border:
+                "1px solid rgba(117, 104, 255, 0.16)",
+              background:
+                "rgba(117, 104, 255, 0.10)",
+              color: "#a9a1ff",
+              placeItems: "center",
+            }}
+          >
+            📦
+          </span>
 
-          <div className="dashboard-order-title">
-            <strong>{order.title}</strong>
+          <div style={{ minWidth: 0 }}>
+            <strong
+              style={{
+                display: "block",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {order.title}
+            </strong>
 
-            <div className="order-meta order-meta--game">
-              {order.game}
-            </div>
+            <div className="muted">{order.game}</div>
 
-            <div className="order-meta order-meta--date">
+            <div
+              className="muted"
+              style={{ marginTop: "3px" }}
+            >
               {new Date(order.createdAt).toLocaleString()}
             </div>
           </div>
         </div>
       </td>
 
-      <td data-label="Customer">
-        <div className="dashboard-table-primary">
-          {order.customer || "—"}
-        </div>
+      <td>
+        {order.customer || "—"}
       </td>
 
-      <td data-label="Booster">
+      <td>
         {order.booster ? (
-          <div className="dashboard-booster-cell">
-            <div
-              className={
-                order.booster.profileImageUrl
-                  ? "dashboard-booster-avatar has-image"
-                  : "dashboard-booster-avatar"
-              }
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "9px",
+              minWidth: 0,
+            }}
+          >
+            <span
+              style={{
+                display: "grid",
+                flex: "0 0 auto",
+                width: "34px",
+                height: "34px",
+                overflow: "hidden",
+                borderRadius: "10px",
+                border:
+                  "1px solid rgba(117, 104, 255, 0.18)",
+                background:
+                  "rgba(117, 104, 255, 0.12)",
+                color: "#c4bfff",
+                placeItems: "center",
+                fontWeight: 800,
+                fontSize: "12px",
+              }}
             >
               {order.booster.profileImageUrl ? (
                 <img
                   src={order.booster.profileImageUrl}
                   alt=""
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                  }}
                 />
               ) : (
-                order.booster.name.charAt(0).toUpperCase()
+                order.booster.name
+                  .charAt(0)
+                  .toUpperCase()
               )}
-            </div>
+            </span>
 
-            <div>
-              <strong>{order.booster.name}</strong>
+            <div style={{ minWidth: 0 }}>
+              <strong
+                style={{
+                  display: "block",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {order.booster.name}
+              </strong>
 
-              <div className="order-meta order-meta--email">
+              <div
+                className="muted"
+                style={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
                 {order.booster.email}
               </div>
             </div>
           </div>
         ) : (
-          <span className="dashboard-unassigned">
+          <span className="muted">
             Unassigned
           </span>
         )}
       </td>
 
-      <td data-label="Original">
-        <strong className="dashboard-money">
+      <td>
+        <strong>
           {formatUsd(price)}
         </strong>
-
         <div className="muted">Gross</div>
       </td>
 
-      <td data-label="7% Fee">
-        <strong className="dashboard-money order-amount--platform">
+      <td>
+        <strong
+          style={{ color: "#fca5a5" }}
+        >
           -{formatUsd(platformFee)}
         </strong>
-
-        <div className="muted">{PLATFORM_FEE_PERCENT}%</div>
+        <div className="muted">
+          {PLATFORM_FEE_PERCENT}%
+        </div>
       </td>
 
-      <td data-label="Booster">
-        <strong className="dashboard-money order-amount--booster">
+      <td>
+        <strong
+          style={{ color: "#6ee7b7" }}
+        >
           {formatUsd(boosterAmount)}
         </strong>
-
         <div className="muted">Net</div>
       </td>
 
-      <td data-label="EGP">
-        <strong className="dashboard-money dashboard-egp">
-          {formatEgp(egp)}
-        </strong>
+      <td>
+        <strong>{formatEgp(egp)}</strong>
+        <div className="muted">
+          1 USD = {exchangeRate.toFixed(2)} EGP
+        </div>
       </td>
 
-      <td data-label="Status">
-        <span className={"order-status " + status.className}>
+      <td>
+        <span
+          className={
+            "order-status " +
+            status.className
+          }
+        >
           <span className="order-status-dot" />
           {status.label}
         </span>
@@ -311,23 +388,31 @@ export default function DashboardPage() {
   const { isArabic } = useLanguage();
   const router = useRouter();
 
-  const [loggingOut, setLoggingOut] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [exchangeRate, setExchangeRate] = useState<number | null>(
-    null
-  );
-  const [recentOrders, setRecentOrders] = useState<
-    RecentOrder[]
-  >([]);
-  const [stats, setStats] = useState<Stats>(EMPTY_STATS);
+  const [loggingOut, setLoggingOut] =
+    useState(false);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [exchangeRate, setExchangeRate] =
+    useState<number | null>(null);
+
+  const [recentOrders, setRecentOrders] =
+    useState<RecentOrder[]>([]);
+
+  const [stats, setStats] =
+    useState<Stats>(EMPTY_STATS);
 
   async function loadDashboard() {
     try {
       setLoading(true);
 
-      const response = await fetch("/api/dashboard", {
-        cache: "no-store",
-      });
+      const response = await fetch(
+        "/api/dashboard",
+        {
+          cache: "no-store",
+        }
+      );
 
       if (!response.ok) {
         if (response.status === 401) {
@@ -335,18 +420,26 @@ export default function DashboardPage() {
           return;
         }
 
-        throw new Error("Failed to load dashboard");
+        throw new Error(
+          "Failed to load dashboard"
+        );
       }
 
-      const data = (await response.json()) as DashboardResponse;
+      const data =
+        (await response.json()) as DashboardResponse;
 
       setRecentOrders(
-        Array.isArray(data.orders) ? data.orders : []
+        Array.isArray(data.orders)
+          ? data.orders
+          : []
       );
 
       setStats(getStats(data));
     } catch (error) {
-      console.error("Dashboard error:", error);
+      console.error(
+        "Dashboard error:",
+        error
+      );
     } finally {
       setLoading(false);
     }
@@ -354,28 +447,39 @@ export default function DashboardPage() {
 
   async function loadExchangeRate() {
     try {
-      const response = await fetch("/api/exchange-rate", {
-        cache: "no-store",
-      });
+      const response = await fetch(
+        "/api/exchange-rate",
+        {
+          cache: "no-store",
+        }
+      );
 
-      const data = (await response.json()) as {
-        error?: string;
-        rate?: number | string;
-      };
+      const data =
+        (await response.json()) as {
+          error?: string;
+          rate?: number | string;
+        };
 
       if (!response.ok) {
         throw new Error(
-          data.error || "Failed to load exchange rate"
+          data.error ||
+            "Failed to load exchange rate"
         );
       }
 
       const rate = Number(data.rate);
 
-      if (Number.isFinite(rate) && rate > 0) {
+      if (
+        Number.isFinite(rate) &&
+        rate > 0
+      ) {
         setExchangeRate(rate);
       }
     } catch (error) {
-      console.error("Exchange rate error:", error);
+      console.error(
+        "Exchange rate error:",
+        error
+      );
     }
   }
 
@@ -388,9 +492,12 @@ export default function DashboardPage() {
     setLoggingOut(true);
 
     try {
-      await fetch("/api/auth/logout", {
-        method: "POST",
-      });
+      await fetch(
+        "/api/auth/logout",
+        {
+          method: "POST",
+        }
+      );
 
       router.replace("/login");
       router.refresh();
@@ -401,97 +508,135 @@ export default function DashboardPage() {
 
   const totalRevenueEgp =
     exchangeRate !== null
-      ? stats.totalRevenue * exchangeRate
+      ? stats.totalRevenue *
+        exchangeRate
       : 0;
 
-  const overviewStats: StatCardProps[] = [
-    {
-      icon: "$",
-      label: "Total Order Value",
-      value: loading
-        ? "..."
-        : formatUsd(stats.totalRevenue),
-      description: "Before 7% platform fee",
-    },
-    {
-      icon: "%",
-      label: "Platform Earnings",
-      value: loading
-        ? "..."
-        : formatUsd(stats.platformFees),
-      description: "Order-specific fee",
-      tone: "primary",
-    },
-    {
-      icon: "↗",
-      label: "Booster Earnings",
-      value: loading
-        ? "..."
-        : formatUsd(stats.boosterEarnings),
-      description: "After platform fee",
-      tone: "success",
-    },
-    {
-      icon: "♟",
-      label: "Active Boosters",
-      value: loading ? "..." : stats.activeBoosters,
-      description: "Currently active",
-    },
-    {
-      icon: "▣",
-      label: "Active Orders",
-      value: loading ? "..." : stats.activeOrders,
-      description: "Pending + in progress",
-    },
-    {
-      icon: "✓",
-      label: "Completed Orders",
-      value: loading ? "..." : stats.completedOrders,
-      description: "Successfully completed",
-      tone: "success",
-    },
-  ];
-
-  const breakdownStats: StatCardProps[] = [
-    {
-      icon: "01",
-      label: "Gross",
-      value: formatUsd(stats.totalRevenue),
-      description: "Original order value",
-    },
-    {
-      icon: "02",
-      label: "Platform Fee",
-      value: "-" + formatUsd(stats.platformFees),
-      description: PLATFORM_FEE_PERCENT + "%",
-      tone: "danger",
-    },
-    {
-      icon: "03",
-      label: "Booster Net",
-      value: formatUsd(stats.boosterEarnings),
-      description: "Before fines",
-      tone: "success",
-    },
-    {
-      icon: "04",
-      label: "Revenue EGP",
-      value:
-        loading || exchangeRate === null
+  const overviewStats: StatCardProps[] =
+    [
+      {
+        icon: "$",
+        label: "Total Order Value",
+        value: loading
           ? "..."
-          : formatEgp(totalRevenueEgp),
-      description: "Current rate",
-    },
-  ];
+          : formatUsd(
+              stats.totalRevenue
+            ),
+        description:
+          "Before 7% platform fee",
+      },
+      {
+        icon: "%",
+        label: "Platform Earnings",
+        value: loading
+          ? "..."
+          : formatUsd(
+              stats.platformFees
+            ),
+        description:
+          "Order-specific fee",
+        tone: "primary",
+      },
+      {
+        icon: "↗",
+        label: "Booster Earnings",
+        value: loading
+          ? "..."
+          : formatUsd(
+              stats.boosterEarnings
+            ),
+        description:
+          "After platform fee",
+        tone: "success",
+      },
+      {
+        icon: "👥",
+        label: "Active Boosters",
+        value: loading
+          ? "..."
+          : stats.activeBoosters,
+        description:
+          "Currently active",
+      },
+      {
+        icon: "📦",
+        label: "Active Orders",
+        value: loading
+          ? "..."
+          : stats.activeOrders,
+        description:
+          "Pending + in progress",
+      },
+      {
+        icon: "✓",
+        label: "Completed Orders",
+        value: loading
+          ? "..."
+          : stats.completedOrders,
+        description:
+          "Successfully completed",
+        tone: "success",
+      },
+    ];
+
+  const breakdownStats: StatCardProps[] =
+    [
+      {
+        icon: "01",
+        label: "Gross",
+        value:
+          formatUsd(
+            stats.totalRevenue
+          ),
+        description:
+          "Original order value",
+      },
+      {
+        icon: "02",
+        label: "Platform Fee",
+        value:
+          "-" +
+          formatUsd(
+            stats.platformFees
+          ),
+        description:
+          PLATFORM_FEE_PERCENT + "%",
+        tone: "danger",
+      },
+      {
+        icon: "03",
+        label: "Booster Net",
+        value:
+          formatUsd(
+            stats.boosterEarnings
+          ),
+        description:
+          "Before fines",
+        tone: "success",
+      },
+      {
+        icon: "04",
+        label: "Revenue EGP",
+        value:
+          loading ||
+          exchangeRate === null
+            ? "..."
+            : formatEgp(
+                totalRevenueEgp
+              ),
+        description:
+          "Current rate",
+      },
+    ];
 
   return (
     <div className="shell dashboard-shell">
-      <aside className="dashboard-sidebar">
+      <aside>
         <Link
           href="/dashboard"
-          className="sidebar-brand dashboard-brand"
+          className="sidebar-brand"
         >
-          <div className="sidebar-brand-logo dashboard-brand-logo">
+          <div className="sidebar-brand-logo">
             <img
               src="/media/logo.png"
               alt="Trynda Business"
@@ -504,225 +649,253 @@ export default function DashboardPage() {
           </div>
         </Link>
 
-        <div className="dashboard-nav-label">
-          القائمة الرئيسية
-        </div>
-
-        <nav className="dashboard-nav">
-          {NAVIGATION_ITEMS.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={
-                item.href === "/dashboard"
-                  ? "active"
-                  : undefined
-              }
-            >
-              <span className="dashboard-nav-icon">
-                {item.icon}
-              </span>
-
-              <span>
+        <nav>
+          {NAVIGATION_ITEMS.map(
+            (item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={
+                  item.href ===
+                  "/dashboard"
+                    ? "active"
+                    : undefined
+                }
+              >
+                {item.icon}{" "}
                 {isArabic
                   ? {
-                      Dashboard: "لوحة التحكم",
-                      Boosters: "البوسترز",
-                      Orders: "الطلبات",
-                      Payments: "المدفوعات",
-                      Settings: "الإعدادات",
+                      Dashboard:
+                        "لوحة التحكم",
+                      Boosters:
+                        "البوسترز",
+                      Orders:
+                        "الطلبات",
+                      Payments:
+                        "المدفوعات",
+                      Settings:
+                        "الإعدادات",
                     }[item.label]
                   : item.label}
-              </span>
-
-              {item.href === "/dashboard" && (
-                <span className="dashboard-nav-active-dot" />
-              )}
-            </Link>
-          ))}
+              </Link>
+            )
+          )}
         </nav>
 
-        <div className="dashboard-sidebar-spacer" />
-
-        <div className="dashboard-sidebar-status">
-          <span className="dashboard-sidebar-status-dot" />
-
-          <div>
-            <strong>System online</strong>
-            <span>كل الخدمات تعمل</span>
-          </div>
-        </div>
-
         <button
+          type="button"
           onClick={handleLogout}
           disabled={loggingOut}
-          className="dashboard-logout"
         >
-          <span>↪</span>
-          {loggingOut ? "جار تسجيل الخروج..." : "تسجيل الخروج"}
+          🚪{" "}
+          {loggingOut
+            ? "Logging out..."
+            : "Logout"}
         </button>
       </aside>
 
-      <main className="content dashboard-content">
-        <header className="dashboard-header">
+      <main className="content">
+        <header>
           <div>
-            <div className="dashboard-eyebrow">
-              <span />
-              BUSINESS OVERVIEW
-            </div>
-
-            <h1>{isArabic ? "لوحة التحكم" : "Dashboard"}</h1>
+            <h1>
+              {isArabic
+                ? "لوحة التحكم"
+                : "Dashboard"}
+            </h1>
 
             <p>
               تابع أداء ونشاط عملك.
             </p>
           </div>
-
-          <div className="dashboard-header-right">
-            <div className="dashboard-live-indicator">
-              <span />
-              LIVE
-            </div>
-
-            <div className="admin-badge dashboard-admin-badge">
-              <span className="admin-dot" />
-
-              <div>
-                <span className="dashboard-admin-role">
-                  ADMIN
-                </span>
-
-                <strong>Administrator</strong>
-              </div>
-            </div>
-          </div>
         </header>
 
-        <section className="dashboard-overview">
-          <div className="dashboard-overview-heading">
-            <div>
-              <span>{isArabic ? "نظرة عامة" : "OVERVIEW"}</span>
-              <h2>{isArabic ? "أداء العمل" : "Business performance"}</h2>
-            </div>
-
-            <div className="dashboard-overview-line" />
-          </div>
-
-          <div className="stats dashboard-stats-grid">
-            {overviewStats.map((stat) => (
+        <div className="stats">
+          {overviewStats.map(
+            (stat) => (
               <StatCard
                 key={stat.label}
-                dashboard
                 {...stat}
               />
-            ))}
-          </div>
-        </section>
+            )
+          )}
+        </div>
 
-        <section className="panel dashboard-section dashboard-rate dashboard-rate-premium">
-          <div className="dashboard-rate-left">
-            <div className="dashboard-rate-icon">
-              $
-            </div>
+        <section
+          className="panel"
+          style={{ marginTop: "20px" }}
+        >
+          <SectionHeader
+            title="Current Exchange Rate"
+            description="Live USD → EGP conversion used across the dashboard."
+          />
 
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "18px",
+              marginTop: "18px",
+              padding: "16px",
+              border:
+                "1px solid rgba(117, 104, 255, 0.12)",
+              borderRadius: "14px",
+              background:
+                "rgba(117, 104, 255, 0.045)",
+            }}
+          >
             <div>
-              <div className="dashboard-rate-eyebrow">
-                MARKET DATA
-              </div>
+              <span
+                style={{
+                  display: "block",
+                  color: "#7f8ba3",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                }}
+              >
+                1 USD
+              </span>
 
-              <h2 className="dashboard-rate__title">
-                Current Exchange Rate
-              </h2>
+              <strong
+                style={{
+                  display: "block",
+                  marginTop: "7px",
+                  fontSize: "24px",
+                }}
+              >
+                →
+              </strong>
 
-              <p className="muted">
-                Live USD → EGP conversion used across the
-                dashboard.
-              </p>
+              <span
+                style={{
+                  display: "block",
+                  marginTop: "3px",
+                  color: "#7f8ba3",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                }}
+              >
+                EGP
+              </span>
             </div>
-          </div>
 
-          <div className="dashboard-rate-center">
-            <span>1 USD</span>
-            <strong>→</strong>
-            <span>EGP</span>
-          </div>
+            <div
+              style={{
+                textAlign: "right",
+              }}
+            >
+              <strong
+                style={{
+                  display: "block",
+                  fontSize: "28px",
+                  color: "#fff",
+                }}
+              >
+                {exchangeRate !== null
+                  ? formatEgp(
+                      exchangeRate
+                    )
+                  : "..."}
+              </strong>
 
-          <div className="dashboard-rate__value">
-            <strong>
-              {exchangeRate !== null
-                ? formatEgp(exchangeRate)
-                : "..."}
-            </strong>
-
-            <div className="dashboard-rate__live">
-              <span />
-              Live rate
+              <small
+                style={{
+                  display: "block",
+                  marginTop: "6px",
+                  color: "#6ee7b7",
+                }}
+              >
+                ● Live rate
+              </small>
             </div>
           </div>
         </section>
 
-        <section className="panel dashboard-section dashboard-breakdown-panel">
+        <section
+          className="panel"
+          style={{ marginTop: "20px" }}
+        >
           <SectionHeader
             title="Payment Breakdown"
             description="How your order revenue is distributed."
           />
 
-          <div className="stats dashboard-breakdown">
-            {breakdownStats.map((stat) => (
-              <StatCard
-                key={stat.label}
-                {...stat}
-              />
-            ))}
+          <div
+            className="stats"
+            style={{ marginTop: "18px" }}
+          >
+            {breakdownStats.map(
+              (stat) => (
+                <StatCard
+                  key={stat.label}
+                  {...stat}
+                />
+              )
+            )}
           </div>
         </section>
 
-        <section className="panel dashboard-panel dashboard-section dashboard-orders-panel">
+        <section
+          className="panel"
+          style={{ marginTop: "20px" }}
+        >
           <SectionHeader
             title="Recent Orders"
             description="Latest activity from your business."
             action={
               <Link
                 href="/orders"
-                className="view-all dashboard-view-all"
+                className="view-all"
               >
-                <span>عرض كل الطلبات</span>
-                <strong>→</strong>
+                View all orders →
               </Link>
             }
           />
 
           {loading ? (
-            <div className="empty dashboard-empty">
-              <div className="dashboard-loading-ring" />
-              <h3>{isArabic ? "جار تحميل الطلبات" : "Loading orders"}</h3>
-              <p>
-                Fetching the latest business activity...
-              </p>
+            <div className="empty">
+              Loading orders...
             </div>
-          ) : recentOrders.length === 0 ? (
-            <div className="empty dashboard-empty">
-              <div className="empty-icon dashboard-empty-icon">
-                ▣
+          ) : recentOrders.length ===
+            0 ? (
+            <div className="empty">
+              <div className="empty-icon">
+                📦
               </div>
 
-              <h3>{isArabic ? "لا توجد طلبات بعد" : "No orders yet"}</h3>
+              <h3>
+                {isArabic
+                  ? "لا توجد طلبات بعد"
+                  : "No orders yet"}
+              </h3>
 
               <p>
-                Create your first order to get started.
+                Create your first
+                order to get started.
               </p>
 
               <Link
                 href="/orders"
-                className="empty-action dashboard-create-order"
+                className="empty-action"
               >
-                Create Order
-                <span>→</span>
+                Create Order →
               </Link>
             </div>
           ) : (
-            <div className="dashboard-table-wrap">
-              <table className="dashboard-orders-table">
+            <div
+              style={{
+                width: "100%",
+                overflowX: "auto",
+                marginTop: "16px",
+                WebkitOverflowScrolling:
+                  "touch",
+              }}
+            >
+              <table
+                style={{
+                  minWidth: "1050px",
+                }}
+              >
                 <thead>
                   <tr>
                     <th>Order</th>
@@ -737,24 +910,34 @@ export default function DashboardPage() {
                 </thead>
 
                 <tbody>
-                  {recentOrders.map((order) => (
-                    <RecentOrderRow
-                      key={order.id}
-                      order={order}
-                    />
-                  ))}
+                  {recentOrders.map(
+                    (order) => (
+                      <RecentOrderRow
+                        key={order.id}
+                        order={order}
+                      />
+                    )
+                  )}
                 </tbody>
               </table>
             </div>
           )}
         </section>
 
-        <div className="dashboard-footer">
-          <span>TRYΝDA BUSINESS</span>
-          <span className="dashboard-footer-separator">
-            /
-          </span>
-          <span>CONTROL CENTER</span>
+        <div
+          style={{
+            marginTop: "20px",
+            paddingBottom:
+              "12px",
+            color: "#56627a",
+            fontSize: "10px",
+            fontWeight: 800,
+            letterSpacing:
+              "0.14em",
+            textAlign: "center",
+          }}
+        >
+          TRYΝDA BUSINESS
         </div>
       </main>
     </div>
