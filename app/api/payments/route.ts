@@ -233,6 +233,7 @@ export async function GET(request: NextRequest) {
     const [
       boosters,
       orders,
+      lifetimeOrders,
       fines,
       payments,
     ] = await Promise.all([
@@ -334,6 +335,40 @@ export async function GET(request: NextRequest) {
         ],
       }),
 
+      // Lifetime gross money: completed orders from the booster\'s
+      // first order through the latest order. This is intentionally
+      // independent from the selected month.
+      prisma.order.findMany({
+        where: {
+          boosterId: {
+            not: null,
+          },
+          status: "COMPLETED",
+        },
+
+        // All-time financial totals: intentionally no month/date filter.
+        // Keep each order's saved fee amounts/rates so historical changes
+        // in fee percentages remain reflected accurately.
+        select: {
+          id: true,
+          boosterId: true,
+          priceUsd: true,
+          platformFeePercent: true,
+          extraPenaltyPercent: true,
+          platformFeeUsd: true,
+          extraPenaltyUsd: true,
+          boosterAmountUsd: true,
+          payment: {
+            select: {
+              orderPriceUsd: true,
+              platformFeeUsd: true,
+              extraPenaltyUsd: true,
+              boosterAmountUsd: true,
+            },
+          },
+        },
+      }),
+
       prisma.deduction.findMany({
         where: {
           userId: {
@@ -393,6 +428,11 @@ export async function GET(request: NextRequest) {
       typeof orders
     >();
 
+    const lifetimeOrderMap = new Map<
+      string,
+      typeof lifetimeOrders
+    >();
+
     const fineMap = new Map<
       string,
       typeof fines
@@ -412,6 +452,21 @@ export async function GET(request: NextRequest) {
       list.push(order);
 
       orderMap.set(
+        order.boosterId,
+        list
+      );
+    }
+
+    for (const order of lifetimeOrders) {
+      if (!order.boosterId) continue;
+
+      const list =
+        lifetimeOrderMap.get(order.boosterId) ||
+        [];
+
+      list.push(order);
+
+      lifetimeOrderMap.set(
         order.boosterId,
         list
       );
@@ -449,6 +504,83 @@ export async function GET(request: NextRequest) {
     const result = boosters.map((booster) => {
       const boosterOrders =
         orderMap.get(booster.id) || [];
+
+      const boosterLifetimeOrders =
+        lifetimeOrderMap.get(booster.id) || [];
+
+      const lifetimeGrossUsd =
+        boosterLifetimeOrders.reduce(
+          (sum, order) =>
+            sum +
+            Number(
+              order.payment?.orderPriceUsd ??
+              order.priceUsd ??
+              0
+            ),
+          0
+        );
+
+      const lifetimePlatformFeeUsd =
+        boosterLifetimeOrders.reduce(
+          (sum, order) => {
+            const gross = Number(
+              order.payment?.orderPriceUsd ?? order.priceUsd ?? 0
+            );
+            const savedFee =
+              order.payment?.platformFeeUsd ?? order.platformFeeUsd;
+            const fee = savedFee != null
+              ? Number(savedFee)
+              : gross * Number(
+                  order.platformFeePercent ?? settings.platformFeePercent
+                ) / 100;
+            return sum + fee;
+          },
+          0
+        );
+
+      const lifetimeExtraPenaltyUsd =
+        boosterLifetimeOrders.reduce(
+          (sum, order) => {
+            const gross = Number(
+              order.payment?.orderPriceUsd ?? order.priceUsd ?? 0
+            );
+            const savedPenalty =
+              order.payment?.extraPenaltyUsd ?? order.extraPenaltyUsd;
+            const penalty = savedPenalty != null
+              ? Number(savedPenalty)
+              : gross * Number(order.extraPenaltyPercent ?? 0) / 100;
+            return sum + penalty;
+          },
+          0
+        );
+
+      const lifetimeBoosterAmountUsd =
+        boosterLifetimeOrders.reduce(
+          (sum, order) => {
+            const gross = Number(
+              order.payment?.orderPriceUsd ?? order.priceUsd ?? 0
+            );
+            const fee = Number(
+              order.payment?.platformFeeUsd ??
+              order.platformFeeUsd ??
+              gross * Number(
+                order.platformFeePercent ?? settings.platformFeePercent
+              ) / 100
+            );
+            const penalty = Number(
+              order.payment?.extraPenaltyUsd ??
+              order.extraPenaltyUsd ??
+              gross * Number(order.extraPenaltyPercent ?? 0) / 100
+            );
+            const savedBoosterAmount =
+              order.payment?.boosterAmountUsd ?? order.boosterAmountUsd;
+            const boosterAmount = savedBoosterAmount != null
+              ? Number(savedBoosterAmount)
+              : gross - fee - penalty;
+            return sum + boosterAmount;
+          },
+          0
+        );
 
       const boosterFines =
         fineMap.get(booster.id) || [];
@@ -537,6 +669,8 @@ export async function GET(request: NextRequest) {
             payment.status === "AVAILABLE"
         );
 
+      // On Hold is current across all dates/months. Do not apply the
+      // selected-month range here: it is a live outstanding hold balance.
       const holdPayments =
         boosterPayments.filter(
           (payment) =>
@@ -618,6 +752,15 @@ export async function GET(request: NextRequest) {
           (
             boosterAmountUsd -
             extraPenaltyUsd -
+            outstandingFines
+          ).toFixed(2)
+        );
+
+      const lifetimeTotalEarnedAfterFeesAndFines =
+        Number(
+          (
+            lifetimeBoosterAmountUsd -
+            lifetimeExtraPenaltyUsd -
             outstandingFines
           ).toFixed(2)
         );
@@ -778,6 +921,12 @@ export async function GET(request: NextRequest) {
 
         grossUsd,
 
+        lifetimeGrossUsd,
+        lifetimePlatformFeeUsd,
+        lifetimeExtraPenaltyUsd,
+        lifetimeBoosterAmountUsd,
+        lifetimeTotalEarnedAfterFeesAndFines,
+
         platformFeeUsd,
 
         boosterAmountUsd,
@@ -826,6 +975,26 @@ export async function GET(request: NextRequest) {
           sum.grossUsd +
           item.grossUsd,
 
+        lifetimeGrossUsd:
+          sum.lifetimeGrossUsd +
+          item.lifetimeGrossUsd,
+
+        lifetimePlatformFeeUsd:
+          sum.lifetimePlatformFeeUsd +
+          item.lifetimePlatformFeeUsd,
+
+        lifetimeExtraPenaltyUsd:
+          sum.lifetimeExtraPenaltyUsd +
+          item.lifetimeExtraPenaltyUsd,
+
+        lifetimeBoosterAmountUsd:
+          sum.lifetimeBoosterAmountUsd +
+          item.lifetimeBoosterAmountUsd,
+
+        lifetimeTotalEarnedAfterFeesAndFines:
+          sum.lifetimeTotalEarnedAfterFeesAndFines +
+          item.lifetimeTotalEarnedAfterFeesAndFines,
+
         platformFeeUsd:
           sum.platformFeeUsd +
           item.platformFeeUsd,
@@ -854,6 +1023,11 @@ export async function GET(request: NextRequest) {
         boosters: 0,
         orders: 0,
         grossUsd: 0,
+        lifetimeGrossUsd: 0,
+        lifetimePlatformFeeUsd: 0,
+        lifetimeExtraPenaltyUsd: 0,
+        lifetimeBoosterAmountUsd: 0,
+        lifetimeTotalEarnedAfterFeesAndFines: 0,
         platformFeeUsd: 0,
         boosterAmountUsd: 0,
         balanceUsd: 0,

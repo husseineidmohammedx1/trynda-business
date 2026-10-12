@@ -57,6 +57,11 @@ type BoosterPayment = {
   orders: number;
 
   grossUsd: number;
+  lifetimeGrossUsd: number;
+  lifetimePlatformFeeUsd: number;
+  lifetimeExtraPenaltyUsd: number;
+  lifetimeBoosterAmountUsd: number;
+  lifetimeTotalEarnedAfterFeesAndFines: number;
   platformFeeUsd: number;
   boosterAmountUsd: number;
 
@@ -78,6 +83,11 @@ type Totals = {
   boosters: number;
   orders: number;
   grossUsd: number;
+  lifetimeGrossUsd: number;
+  lifetimePlatformFeeUsd: number;
+  lifetimeExtraPenaltyUsd: number;
+  lifetimeBoosterAmountUsd: number;
+  lifetimeTotalEarnedAfterFeesAndFines: number;
   platformFeeUsd: number;
   boosterAmountUsd: number;
 
@@ -1038,7 +1048,9 @@ await loadPayments();
             </strong>
 
             <small>
-              Waiting 5 days
+              {isArabic
+                ? "كل الطلبات التي ما زالت داخل فترة الحجز، بكل التواريخ"
+                : "All orders still in the hold period, across all dates"}
             </small>
           </div>
 
@@ -1124,12 +1136,12 @@ await loadPayments();
 
             <strong>
               {formatMoney(
-                totals?.grossUsd ?? 0
+                totals?.lifetimeGrossUsd ?? 0
               )}
             </strong>
 
             <small>
-              Before 7% fee
+              All-time from first order to latest order • Before 7% fee
             </small>
           </div>
 
@@ -1146,12 +1158,16 @@ await loadPayments();
             >
               -
               {formatMoney(
-                totals?.platformFeeUsd ??
+                totals?.lifetimePlatformFeeUsd ??
                   0
               )}
             </strong>
 
-            <small>7%</small>
+            <small>
+              {isArabic
+                ? "إجمالي رسوم كل الطلبات المكتملة من البداية"
+                : "Lifetime platform fees across all completed orders"}
+            </small>
           </div>
         </div>
 
@@ -1382,9 +1398,13 @@ await loadPayments();
                             <td>
                               <strong>
                                 {formatMoney(
-                                  payment.grossUsd
+                                  payment.lifetimeGrossUsd
                                 )}
                               </strong>
+
+                              <div className="muted" style={{ fontSize: "10px", marginTop: "4px" }}>
+                                All-time
+                              </div>
                             </td>
 
                             {/* BALANCE */}
@@ -1471,6 +1491,9 @@ await loadPayments();
                                       exchangeRate
                                 )}
                               </div>
+                              <small className="muted" style={{ display: "block", marginTop: "3px", fontSize: "10px" }}>
+                                {isArabic ? "كل التواريخ" : "All dates"}
+                              </small>
                             </td>
 
                             {/* FINED */}
@@ -1754,15 +1777,16 @@ await loadPayments();
 
                                     <strong>
                                       {formatMoney(
-                                        payment.grossUsd
+                                        payment.lifetimeGrossUsd
                                       )}
                                     </strong>
                                   </div>
 
                                   <div className="stat">
                                     <span>
-                                      7% Platform
-                                      Fee
+                                      {isArabic
+                                        ? "رسوم المنصة عبر كل الطلبات"
+                                        : "Platform Fee (all-time)"}
                                     </span>
 
                                     <strong
@@ -1773,7 +1797,7 @@ await loadPayments();
                                     >
                                       -
                                       {formatMoney(
-                                        payment.platformFeeUsd
+                                        payment.lifetimePlatformFeeUsd
                                       )}
                                     </strong>
                                   </div>
@@ -1786,7 +1810,23 @@ await loadPayments();
 
                                     <strong>
                                       {formatMoney(
-                                        payment.boosterAmountUsd
+                                        payment.lifetimeBoosterAmountUsd
+                                      )}
+                                    </strong>
+                                  </div>
+
+                                  <div className="stat">
+                                    <span>
+                                      {isArabic
+                                        ? "الغرامات الإضافية عبر كل الطلبات"
+                                        : "Extra Penalties (all-time)"}
+                                    </span>
+
+                                    <strong
+                                      style={{ color: "#fca5a5" }}
+                                    >
+                                      -{formatMoney(
+                                        payment.lifetimeExtraPenaltyUsd
                                       )}
                                     </strong>
                                   </div>
@@ -1820,7 +1860,7 @@ await loadPayments();
 
                                     <strong>
                                       {formatMoney(
-                                        payment.totalEarnedAfterFeesAndFines
+                                        payment.lifetimeTotalEarnedAfterFeesAndFines
                                       )}
                                     </strong>
                                   </div>
