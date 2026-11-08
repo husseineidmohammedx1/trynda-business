@@ -1174,11 +1174,8 @@ export async function PATCH(
       );
     }
 
-    let range;
-
     try {
-      range =
-        getMonthRange(month);
+      getMonthRange(month);
     } catch {
       return NextResponse.json(
         {
@@ -1209,6 +1206,8 @@ export async function PATCH(
         },
       }),
 
+      // Payment balances are lifetime totals, independent of the selected
+      // month used to label the payment transaction.
       prisma.payment.findMany({
         where: {
           boosterId,
@@ -1222,11 +1221,6 @@ export async function PATCH(
 
           order: {
             status: "COMPLETED",
-
-            completedAt: {
-              gte: range.start,
-              lt: range.end,
-            },
           },
         },
 
